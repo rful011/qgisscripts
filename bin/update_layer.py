@@ -1,4 +1,6 @@
 
+""" update layers in place """
+
 # Import the PyQt and the QGIS libraries
 from PyQt4.QtCore import *
 from PyQt4.QtGui import *
@@ -8,7 +10,11 @@ from qgis.utils import iface
 import time
 import re
 import string
+import sys, os
 
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'lib'))
+
+from my_utils import find_layer
 
 # from qgis.utils import iface
 
@@ -18,22 +24,22 @@ import string
 
 
 
-def find_layer(layer_name):
-    layers = QgsMapLayerRegistry.instance().mapLayers()
-    l = False
-    for name, layer in layers.iteritems():
-        if layer_name == layer.name(): # re.match(layer_name, layer.name()):
-            l = layer
-    return l
+#def find_layer(layer_name):
+#    layers = QgsMapLayerRegistry.instance().mapLayers()
+#    l = False
+#    for name, layer in layers.iteritems():
+#        if layer_name == layer.name(): # re.match(layer_name, layer.name()):
+#            l = layer
+#    return l
 
 def run_script(iface, m_l='wp-master', u_l='changed, waypoints', matchon = 'name'):
 
     if matchon == '':
         matchon = 'name'
-        if m_l == '':
-            m_l = 'wp_master'
+    if m_l == '':
+        m_l = 'wp_master-all'
     if u_l == '':
-        u_l = 'changed, waypoints'
+        u_l = 'changed'
 
 
     print 'master = ', m_l, 'update = ', u_l
