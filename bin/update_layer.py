@@ -24,14 +24,6 @@ from my_utils import find_layer
 
 
 
-#def find_layer(layer_name):
-#    layers = QgsMapLayerRegistry.instance().mapLayers()
-#    l = False
-#    for name, layer in layers.iteritems():
-#        if layer_name == layer.name(): # re.match(layer_name, layer.name()):
-#            l = layer
-#    return l
-
 def run_script(iface, m_l='wp-master', u_l='changed, waypoints', matchon = 'name'):
 
     if matchon == '':
@@ -59,7 +51,7 @@ def run_script(iface, m_l='wp-master', u_l='changed, waypoints', matchon = 'name
 
     update_features = {}  # indexed by feature attribute name
     for f in update.getFeatures():
-        print f
+#        print f
         update_features[f.attribute(matchon)] = f
 
 

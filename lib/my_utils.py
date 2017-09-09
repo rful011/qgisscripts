@@ -14,25 +14,6 @@ import os, errno
 import os.path
 import subprocess
 
-wp_type_d = {
-    'R': 'rt',
-    'B': 'nb',
-    'S': 'sign',
-    'T': 'track',
-    'R': 'rt',
-    'C': 'stream',
-    'M': 'misc',
-    'W': 'weed'
-}
-classes = {
-    'B': {
-        'H': 'Hihi',
-        'T': 'saddleback',
-        'K': 'Kakariki',
-        'R': 'rifleman'
-    }
-}
-
 
 
 def find_layer( layer_name ):
@@ -43,8 +24,20 @@ def find_layer( layer_name ):
             l = layer
     return l
 
-def cmp_wp(wp1, wp2):
-    wp1.latitude == wp2.latitude and wp1.longitude == wp2.longitude
+
+def wp_eq(wp1, wp2):
+    return (wp1.latitude == wp2.latitude and wp1.longitude == wp2.longitude)
+
+wp_type_d = {
+    'R': 'rt',
+    'B': 'nb',
+    'S': 'sign',
+    'T': 'track',
+    'R': 'rt',
+    'C': 'stream',
+    'M': 'misc',
+    'W': 'weed'
+}
 
 def get_wp_type( name ):
 
@@ -52,6 +45,15 @@ def get_wp_type( name ):
         return wp_type_d[name[0]]
     return 'misc'
 
+
+classes = {
+    'B': {
+        'H': 'Hihi',
+        'T': 'saddleback',
+        'K': 'Kakariki',
+        'R': 'rifleman'
+    }
+}
 
 def wp_classes( type, name ):
     if type in classes and name[2] in classes[type]:
@@ -71,15 +73,20 @@ def ensure_dir(file_path):
 def sysx ( cmd ):
     subprocess.check_output(cmd)
 
-def set_attrb(fet, name, val, default = None):
+def set_attrb(fet, name, val, defaults, default = None ):  #
+    if not name in defaults:
+        return
     v = val
-    if  not val and default:
-        v = default
-    if v != None:
+    if not val :
+        if not default:
+            v = defaults[name]
+        else:
+            v = default
+    if v :
         fet.setAttribute(name, v)
 
 def canonicalise_name( name ):
-#    print name
+    print name
     # T C ID
     i = 1
     wp_type = name[0]
@@ -118,48 +125,40 @@ def canonicalise_name( name ):
     #print wp_type, classf, cname
     return [ wp_type, classf, cname ]
 
-def add_wp_layer( name, model, gpx_points, defaults ):
-    # create layer a layer the same as 'model' and load the gpx way_points into it
+def add_wp_layer( layer_name, model, gpx_points, defaults):
+    # create layer
 
     # source crs
     crsSrc = QgsCoordinateReferenceSystem(4326)
-    # target crs
-    crsDest = model.crs()  # .authid()  # without () after originalLayer
-
+    crsDest = model.crs()
     tr = QgsCoordinateTransform(crsSrc, crsDest)
 
-    vl = QgsVectorLayer("PointZ?crs="+crsDest.authid(), name, "memory")
+    vl = QgsVectorLayer("Point?crs="+crsDest.authid(), layer_name, "memory")
     pr = vl.dataProvider()  # need to create data provider
 
-    #copy the field definitions from model
-    template = {}
+    fields = model.pendingFields()
 
-    for field in model.pendingFields():
-        # print field.name(), field.isNumeric(), field.length(), field.precision()
-        name = field.name()
-        if name == 'gid':
-            continue  # let postgis set the gid
-
-        field_type = QVariant.String
-        if field.isNumeric:
-            if field.precision == 0:
-                field_type = QVariant.Int
-            else:
-                field_type = QVariant.Double
-        pr.addAttributes([QgsField(name, field_type )])
-        template[name] = None
-        if name in defaults:
-            template[name] = defaults[name]
+    if fields[0].name() == 'gid':
+        fields.remove(0)  # let postgis set the gid
+    pr.addAttributes(fields)
+    vl.updateFields()  # tell the vector layer to fetch changes from the provider
 
     vl.updateFields()  # tell the vector layer to fetch changes from the provider
     fields = vl.pendingFields()
 
-    # now add the points
+    # build a hash if the filed names with default values if given
+    template = {}
+    for f in fields:
+        name = f.name()
+        template[name] = None
+        if name in defaults:
+            template[name] = defaults[name]
 
-    features   = []
+    # now add the points
+    features = []
     for wp in gpx_points:
         n = wp.name
-        [wp_t, cl, cn] = canonicalise_name(n)
+        [wp_t, cl, cn] = canonicalise_name(wp.name)
 
         time = wp.time
         if wp.time:
@@ -171,44 +170,169 @@ def add_wp_layer( name, model, gpx_points, defaults ):
         point = tr.transform( QgsPoint( wp.longitude, wp.latitude) )
         fet.setGeometry(QgsGeometry(QgsPointV2(QgsWKBTypes.PointZ, point.x(), point.y(), 0.0)))
 
-        set_attrb(fet, 'name', cn )
-        if 'rw_id' in template:
-            set_attrb(fet, 'rw_id', wp.comment, n)
-        if 'created' in template:
-            default = None
-            if 'created' in defaults:
-                defefault = defaults['created']
-            set_attrb(fet, 'created', time, default )
-        #t = None
-        if 'type' in template:
-            set_attrb(fet, 'type', wp_type_d[wp_t] )
-        if 'classification' in template:
-            set_attrb(fet, 'classification', cl )
-        if 'updated' in template:
-            default = None
-            if 'updated' in defaults:
-                defefault = defaults['updated']
-            set_attrb(fet, 'updated', time, default )
-        if 'source' in template and 'source' in defaults:
-            set_attrb(fet, 'source', defaults['source'] )
+        set_attrb(fet, 'name', cn, template )
+        set_attrb(fet, 'rw_id', wp.comment, template, n)
+        set_attrb(fet, 'created', time, template )
+        set_attrb(fet, 'type', wp_type_d[wp_t], template )
+        set_attrb(fet, 'classification', cl, template)
+        set_attrb(fet, 'updated', time, template)
+        set_attrb(fet, 'source', None, template )
         features.append(fet)
 
-    if pr.addFeatures(features):
-        print 'addFeatures added ' + str(len(features)) + ' features'
-    if not QgsMapLayerRegistry.instance().addMapLayer(vl):
-        print 'addMapLayer failed'
+    pr.addFeatures(features)
+    vl.updateExtents()
+    QgsMapLayerRegistry.instance().addMapLayer(vl)
 
-def process_gpx_files( repository, new_dir, mount, upload ):
+def export_gpx_files( layer_name ):
 
-    current = './current'
+    #this stuff should be in a configuration file
+
+    nestbox = {
+        'hihi': 'Navaid, Black',
+        'saddleback': 'Navaid, Orange',
+        'kakariki': 'Circle, Red',
+        'rifleman': 'Circle, Green',
+        'default': 'Navaid, blue',
+        'files': True   # separate files please!
+    }
+    nestbox_default = 'Navaid, White',
+
+
+    weeds = {
+        'mp': 'Block, Blue',
+        'sp': 'Flag, Blue',
+        'mm': 'Diamond, Blue',
+        'pw': 'Square, Blue',
+        'default': 'Navaid, Blue',
+        'files': False
+    }
+    weeds_default = 'Pin, Blue'
+    print type(weeds)
+    test = 1
+    markers = {  # by type
+        'weed': weeds,
+        'nb': nestbox,
+        'sign': 'Pin, Green',
+        'track': 'Flag, Red',
+        'files': False
+    }
+
+    # build a list of file from the config above
+
+    files = []
+    gpx_out = {}
+
+    for k, v in markers.iteritems():
+        if type(v) is dict  and v['files']:
+            for  kk, vv in v.iteritems():
+                if kk != 'files' and kk != 'default' :
+                    files.append(kk)
+        elif k != 'files' :
+            files.append( k )
+
+    print files
+
+    for f in files:
+        gpx_out[f] = gpxpy.gpx.GPX()
+
+    # set up CRS transform
+
+    layer = find_layer(layer_name)
+    crsDst = QgsCoordinateReferenceSystem(4326)
+    crsSrc = layer.crs()
+    tr = QgsCoordinateTransform(crsSrc, crsDst)
+
+
+    # iterate over features in layer
+
+    for feature in layer.getFeatures():
+        point = feature.geometry()
+        point.transform(tr)
+        point = point.asPoint()
+
+        ftype = feature['type']
+        if ftype not in markers:
+            continue
+
+        m = markers[ftype]
+        if type( m ) is dict :  # there is a nested list
+            ind_files = m['files']
+            if feature['classification'] :
+                c = feature['classification'].lower()
+                if c in m:
+                    m = m[c]
+                else:
+                    m = m['default']
+            else:
+                continue
+            if ind_files: # true if we want individual files
+                ftype = c
+        print feature['type'], ftype, m
+        if ftype not in gpx_out:
+            continue
+
+        name = feature['name']
+        cmt = ''
+        if feature['rw_id']:
+            name = feature['rw_id']
+        if feature['description']:
+            cmt = feature['description']
+        # create gpx waypoint
+
+        wp = gpxpy.gpx.GPXWaypoint(latitude=point.y(), longitude=point.x(),
+                                   name=name, comment=cmt, symbol=m)
+        print name
+        gpx_out[ftype].waypoints.append( wp )
+        gpx_out[ftype].to_xml()
+
+    export_dir = 'current/gpx_export'
+    ensure_dir( export_dir )
+
+    for file in files:
+        print file
+        print gpx_out[file].waypoints
+        with open( export_dir + '/' + file + '.gpx', 'w') as gpx_file:
+            gpx_file.write( gpx_out[file].to_xml())
+
+
+def find_gps_devices( gps_mount, device_list ):
+
+    if os.path.exists(device_list):
+        with open(device_list) as json_data:
+            d = json.load(json_data)
+            devices = d['devices']
+
+    device_dirs = {}
+
+    for vol in os.listdir(gps_mount):
+        if not re.match('GARMIN', vol):
+            continue
+        device = ''
+        # get the device ID form the device file
+        id = ''
+        garmin_dir = '/Volumes/' + vol + '/Garmin/'
+
+        with open(garmin_dir + '/GarminDevice.xml', 'r') as f:
+            for l in f:
+                m = re.search('<Id>(\d+)<\/Id>', l)
+                if m:
+                    id = m.group(1)
+                if id in devices:
+                    device_dirs[devices[id]] = garmin_dir
+                else:
+                    print "Can not find device " + id + " in devices file"
+                    os.exit
+    return device_dirs
+
+def import_gpx_files( new_dir, gps_mount, upload ):
+
+    new_files = './new_files'
     # keep_data_for = ' 6 months'
     devices = {}
 
-    os.chdir(repository)
-
-    if upload:
-        ensure_dir(new_dir)
-        ensure_dir(current)
+    ensure_dir(new_dir)
+    os.symlink(new_dir, './current')
+    ensure_dir(new_files)
 
     archive = {}
 
@@ -233,54 +357,57 @@ def process_gpx_files( repository, new_dir, mount, upload ):
             archive[f]['digest'] = hashlib.md5(latest)
 
     if upload:
-        dev_file = repository + '/devices.json'
-        if os.path.exists(dev_file):
-            with open('devices.json') as json_data:
-                d = json.load(json_data)
-                devices = d['devices']
 
-        # find mounted gpses and loop over them
-        for vol in os.listdir(mount):
-            if not re.match('GARMIN', vol):
-                continue
-            device = ''
+        for device, gps_dir in find_gps_devices(gps_mount, 'devices.json' ).iteritems():
+
+#        dev_file = repository + '/devices.json'
+#        if os.path.exists(dev_file):
+#            with open('devices.json') as json_data:
+#                d = json.load(json_data)
+#                devices = d['devices']
+#
+#        # find mounted gpses and loop over them
+#        for vol in os.listdir(gps_mount):
+#            if not re.match('GARMIN', vol):
+#                continue
+#            device = ''
 
             # get the device ID form the device file
 
-            id = ''
-            garmin_dir = '/Volumes/' + vol + '/Garmin/'
+ #           id = ''
+ #           garmin_dir = '/Volumes/' + vol + '/Garmin/'
 
-            with open(garmin_dir + '/GarminDevice.xml', 'r') as f:
-                for l in f:
-                    m = re.search('<Id>(\d+)<\/Id>', l)
-                    if m:
-                        id = m.group(1)
-                if id in devices:
-                    device = devices[id]
-                else:
-                    print "Can not find device " + id + " in devices file"
-                    os.exit
+#            with open(garmin_dir + '/GarminDevice.xml', 'r') as f:
+#                for l in f:
+#                    m = re.search('<Id>(\d+)<\/Id>', l)
+#                    if m:
+#                        id = m.group(1)
+#                if id in devices:
+#                    device = devices[id]
+#                else:
+#                    print "Can not find device " + id + " in devices file"
+#                    os.exit
 
-            # for each gpx file on the device  copy new or changed files to current
+            # for each gpx file on the device  copy new or changed files to :new_files
             #   all have already been copied to
-            os.system( 'pwd' )
+#            os.system( 'pwd' )
             p = re.compile(r'(Track|Wayp).+\.gpx$')
-            for f in os.listdir(garmin_dir + '/GPX'):
+            for f in os.listdir(gps_dir + '/GPX'):
                 if p.match(f):
                     fp = garmin_dir + '/GPX/' + f
                     ff = device + '-' + f
                     if ff not in archive or (archive[ff]['digest'].digest() != hashlib.md5(garmin_dir + '/GPX/' + f).digest() ) :
-                        sysx(['cp', '-p', fp,  current + '/' + ff])  # Copy it to current for further processing
+                        sysx(['cp', '-p', fp, new_files + '/' + ff])  # Copy it to :new_files for further processing
                     sysx(['cp', '-p', fp, new_dir + '/' + ff ] )  # Copy it to new archive
 
     # At this point we should have an archive copy of the GPX directory in new_dir
-    # and a copy of all new/chagned files in current
+    # and a copy of all new/chagned files in :new_files
     # instantiate gpx object to hold new and changed objects
 
     changed = gpxpy.gpx.GPX()
     new = gpxpy.gpx.GPX()
 
-    for f in os.listdir(current):
+    for f in os.listdir(new_files):
 
         if re.search(r'Waypoints.+\.gpx$', f):
             original = False
@@ -292,14 +419,16 @@ def process_gpx_files( repository, new_dir, mount, upload ):
                     except:
                         print "error parsing latest/" + f
                         continue
+
                     for wp in gpx.waypoints:
                         original[wp.name] = wp
-            with open('current/' + f, 'r')  as gpx_file:
+            with open(new_files + '/' + f, 'r')  as gpx_file:
                 try:
                     gpx = gpxpy.parse(gpx_file)
                 except:
-                    print "error parsing current/" + f
+                    print "error parsing " + new_files+ '/' + f
                     continue
+
                 for wp in gpx.waypoints:
                     # if wp.extensions:
                     # print 'ext:', wp.extensions #['wptx1:WaypointExtension']
@@ -307,21 +436,16 @@ def process_gpx_files( repository, new_dir, mount, upload ):
                     if original:
                         if wp.name not in original:
                             new.waypoints.append(wp)
-                        elif not cmp_wp( original[wp.name], wp ):
+                        elif not wp_eq(original[wp.name], wp):
                             changed.waypoints.append(wp)
                     else:
                         new.waypoints.append(wp)
 
-#    if master:
-
-
     if new.waypoints:
-        with open('current/new.gpx', 'w') as output:
+        with open(new_files +' /new.gpx', 'w') as output:
             output.write(new.to_xml())
 
     if changed.waypoints:
-        with open('current/changed.gpx', 'w') as output:
+        with open(new_files + '/changed.gpx', 'w') as output:
             output.write(changed.to_xml())
     return [new.waypoints, changed.waypoints]
-
-

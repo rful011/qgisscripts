@@ -1,23 +1,17 @@
 """ upload and process gpx files from one or more Garmin GPSs """
 
-# Import the PyQt and the QGIS libraries
-
-from PyQt4.QtCore import *
-from PyQt4.QtGui import *
-from qgis.core import *
-
 from time import localtime, strftime
 import sys, os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'lib'))
 
-from my_utils import  process_gpx_files, add_wp_layer, find_layer
-
+from my_utils import  import_gpx_files, add_wp_layer, find_layer
 
 def run_script(iface, repository, new_dir, mount, upload ):
 
 
     master = None
 
+    date = strftime("%Y-%m-%d", localtime())
     now = strftime("%Y-%m-%d %H:%M:%S", localtime())
 
     if repository == '' :
@@ -29,9 +23,10 @@ def run_script(iface, repository, new_dir, mount, upload ):
     if upload == '':
         upload = False
 
+    os.chdir(repository)
     master = find_layer( 'wp_master')
 
-    results = process_gpx_files(repository, new_dir, mount, upload )
+    results = import_gpx_files( new_dir, mount, upload )
     # print results
 
     defaults = {
