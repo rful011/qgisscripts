@@ -1,12 +1,14 @@
 """ upload and process gpx files from one or more Garmin GPSs """
 
 from time import localtime, strftime
-import sys, os
+import sys, os, re
+from os.path import expanduser
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'lib'))
+
 
 from my_utils import  import_gpx_files, add_wp_layer, find_layer
 
-def run_script(iface, repository, new_dir, mount, upload ):
+def run_script(iface, **myargs): # repository, new_dir, mount, upload ):
 
 
     master = None
@@ -14,17 +16,34 @@ def run_script(iface, repository, new_dir, mount, upload ):
     date = strftime("%Y-%m-%d", localtime())
     now = strftime("%Y-%m-%d %H:%M:%S", localtime())
 
-    if repository == '' :
-        repository = '/Users/rful011/GPS-Data'
-    if new_dir == '' :
-        new_dir= './' + now
-    if mount == '':
-        mount = '/Volumes'
-    if upload == '':
-        upload = False
+
+    repository = expanduser('~') + "/GPS-Data"
+    new_dir = date # current date
+    mount = '/Volumes'
+    upload = False
+    layer = 'wp_master'
+
+    exit_now = False
+    for k, v in myargs.iteritems():
+        if re.match( k, 'newdir' ) :
+            new_dir = v
+        elif re.match( k, 'repository' ):
+            repository = v
+        elif re.match( k, 'upload'):
+            upload = v
+        elif re.match(k, 'layer'):
+            layer = v
+        elif re.match(k, 'help'):
+            print "repository = ~/GPS-Data, newdir= <currentdate>, upload = False, layer = wp_master"
+            exit_now = True
+        else:
+            print "I don't recognise option '" + k + "'"
+            exit_now = True
+    if exit_now:
+        return
 
     os.chdir(repository)
-    master = find_layer( 'wp_master')
+    master = find_layer( layer )
 
     results = import_gpx_files( new_dir, mount, upload )
     # print results

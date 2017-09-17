@@ -6,24 +6,47 @@
 """
 
 from time import localtime, strftime
-import sys, os
+import sys, os, re
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'lib'))
 
+from os.path import expanduser
 from my_utils import export_gpx_files
 
-def run_script(iface, layer, repository, finalise  ):
+def run_script(iface, **myargs): # layer, repository, finalise  ):
 
-    if layer == '':
-        layer = 'wp_master'
-    if repository == '' :
-        repository = '/Users/rful011/GPS-Data'
-    if finalise == '':
-        finalise = False
+    layer = 'wp_master'
+    repository = expanduser('~') +"/GPS-Data"
+    finalise = False
+    just_finalise = False
+    rw_id = False  # use full name as default
+    exit_now = False
+    for k, v in myargs.iteritems():
+        if re.match( k, 'layer' ) :
+            layer = v
+        elif re.match( k, 'repository' ):
+            repository = v
+        elif re.match( k, 'just_finalise'):
+            just_finalise = v
+            finalise = True
+        elif re.match(k, 'finalise'):
+            finalise = v
+        elif re.match( k, 'rw_id'):
+            rw_id = v
+        elif re.match(k, 'help'):
+            print "repository = ~/GPS-Data, layer = wp_master, finialise = False, rw_id = False, just_finailise = False"
+            exit_now = True
+        else:
+            print "I don't recognise option '" + k + "'"
+            exit_now = True
+
+    if exit_now:
+        return
 
     os.chdir(repository)
 
-    export_gpx_files( layer )
+    if not just_finalise:
+        export_gpx_files( layer, rw_id )
 
     if finalise :  # change the symlinks ready for next update with latest pointing to most recent dir
-        os.delete('latest')
+        os.remove('latest')
         os.rename('current', 'latest')
