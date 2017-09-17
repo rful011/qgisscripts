@@ -86,7 +86,6 @@ def set_attrb(fet, name, val, defaults, default = None ):  #
         fet.setAttribute(name, v)
 
 def canonicalise_name( name ):
-    print name
     # T C ID
     i = 1
     wp_type = name[0]
@@ -183,7 +182,7 @@ def add_wp_layer( layer_name, model, gpx_points, defaults):
     vl.updateExtents()
     QgsMapLayerRegistry.instance().addMapLayer(vl)
 
-def export_gpx_files( layer_name ):
+def export_gpx_files( layer_name, rw_id ):
 
     #this stuff should be in a configuration file
 
@@ -230,7 +229,7 @@ def export_gpx_files( layer_name ):
         elif k != 'files' :
             files.append( k )
 
-    print files
+    #print files
 
     for f in files:
         gpx_out[f] = gpxpy.gpx.GPX()
@@ -267,21 +266,21 @@ def export_gpx_files( layer_name ):
                 continue
             if ind_files: # true if we want individual files
                 ftype = c
-        print feature['type'], ftype, m
+        #print feature['type'], ftype, m
         if ftype not in gpx_out:
             continue
 
         name = feature['name']
-        cmt = ''
-        if feature['rw_id']:
+        if rw_id and feature['rw_id'] !='' :
             name = feature['rw_id']
+        cmt = ''
         if feature['description']:
             cmt = feature['description']
         # create gpx waypoint
 
         wp = gpxpy.gpx.GPXWaypoint(latitude=point.y(), longitude=point.x(),
                                    name=name, comment=cmt, symbol=m)
-        print name
+        #print name
         gpx_out[ftype].waypoints.append( wp )
         gpx_out[ftype].to_xml()
 
@@ -289,8 +288,8 @@ def export_gpx_files( layer_name ):
     ensure_dir( export_dir )
 
     for file in files:
-        print file
-        print gpx_out[file].waypoints
+        #print file
+        #print gpx_out[file].waypoints
         with open( export_dir + '/' + file + '.gpx', 'w') as gpx_file:
             gpx_file.write( gpx_out[file].to_xml())
 
@@ -324,69 +323,52 @@ def find_gps_devices( gps_mount, device_list ):
                     os.exit
     return device_dirs
 
+def md5_file( name ):
+    md5 = hashlib.md5()
+    file = open(name, 'rb')
+    while True:
+        data = file.read(8192)
+        if not data:
+            break
+        md5.update(data)
+
+    file.close()
+    return md5
+
 def import_gpx_files( new_dir, gps_mount, upload ):
 
-    new_files = './new_files'
+    new_files = './current/new_files'
     # keep_data_for = ' 6 months'
     devices = {}
 
-    ensure_dir(new_dir)
-    os.symlink(new_dir, './current')
-    ensure_dir(new_files)
 
     archive = {}
 
     # copy all the files from the latest directory to new_dir and compute md5 for all gpx files
 
-    for f in os.listdir("latest"):
-        if os.path.isdir("latest/" + f):
-            continue
-        digest = None
-
-        #  next unless f.match(/-(Track|Wayp).+\.gpx$/)
-        nf = new_dir + '/' + 'f'
-        if os.path.exists(nf):
-            digest = hashlib.md5('latest/' + 'f')
-            if digest == hashlib.md5(nf):  # they are the same
-                continue
-        latest = 'latest/' + f
-        if upload:
-            sysx(['cp', '-p', latest, new_dir + '/' + f] )
-        archive[f] = {'mtime': os.path.getmtime(latest)}
-        if not 'digest' in archive[f]:
-            archive[f]['digest'] = hashlib.md5(latest)
-
     if upload:
+        ensure_dir(new_dir)
+        os.remove('./current')
+        os.symlink(new_dir, './current')
+        ensure_dir(new_files)
+        for f in os.listdir("latest"):
+            if os.path.isdir("latest/" + f):
+                continue
+            digest = None
+
+            #  next unless f.match(/-(Track|Wayp).+\.gpx$/)
+            nf = new_dir + '/' + 'f'
+            if os.path.exists(nf):
+                digest = md5_file('latest/' + 'f')
+                if digest == hashlib.md5(nf):  # they are the same
+                    continue
+            latest = 'latest/' + f
+            sysx(['cp', '-p', latest, new_dir + '/' + f])
+            archive[f] = {'mtime': os.path.getmtime(latest)}
+            if not 'digest' in archive[f]:
+                archive[f]['digest'] = md5_file(latest)
 
         for device, gps_dir in find_gps_devices(gps_mount, 'devices.json' ).iteritems():
-
-#        dev_file = repository + '/devices.json'
-#        if os.path.exists(dev_file):
-#            with open('devices.json') as json_data:
-#                d = json.load(json_data)
-#                devices = d['devices']
-#
-#        # find mounted gpses and loop over them
-#        for vol in os.listdir(gps_mount):
-#            if not re.match('GARMIN', vol):
-#                continue
-#            device = ''
-
-            # get the device ID form the device file
-
- #           id = ''
- #           garmin_dir = '/Volumes/' + vol + '/Garmin/'
-
-#            with open(garmin_dir + '/GarminDevice.xml', 'r') as f:
-#                for l in f:
-#                    m = re.search('<Id>(\d+)<\/Id>', l)
-#                    if m:
-#                        id = m.group(1)
-#                if id in devices:
-#                    device = devices[id]
-#                else:
-#                    print "Can not find device " + id + " in devices file"
-#                    os.exit
 
             # for each gpx file on the device  copy new or changed files to :new_files
             #   all have already been copied to
@@ -394,11 +376,12 @@ def import_gpx_files( new_dir, gps_mount, upload ):
             p = re.compile(r'(Track|Wayp).+\.gpx$')
             for f in os.listdir(gps_dir + '/GPX'):
                 if p.match(f):
-                    fp = garmin_dir + '/GPX/' + f
+                    fp = gps_dir + '/GPX/' + f
                     ff = device + '-' + f
-                    if ff not in archive or (archive[ff]['digest'].digest() != hashlib.md5(garmin_dir + '/GPX/' + f).digest() ) :
-                        sysx(['cp', '-p', fp, new_files + '/' + ff])  # Copy it to :new_files for further processing
-                    sysx(['cp', '-p', fp, new_dir + '/' + ff ] )  # Copy it to new archive
+                    if ff not in archive or (archive[ff]['digest'].digest() != md5_file(fp).digest() ) :
+                        sysx(['cp', '-p', fp, new_dir + '/' + ff])  # Copy it to new archive
+                        os.symlink(  '../' + ff, new_files + '/' + ff )
+#                        sysx(['cp', '-p', fp, new_files + '/' + ff])  # Copy it to :new_files for further processing
 
     # At this point we should have an archive copy of the GPX directory in new_dir
     # and a copy of all new/chagned files in :new_files
@@ -442,7 +425,7 @@ def import_gpx_files( new_dir, gps_mount, upload ):
                         new.waypoints.append(wp)
 
     if new.waypoints:
-        with open(new_files +' /new.gpx', 'w') as output:
+        with open(new_files +'/new.gpx', 'w') as output:
             output.write(new.to_xml())
 
     if changed.waypoints:
