@@ -14,16 +14,13 @@ import os, errno
 import os.path
 import subprocess
 
-
-
 def find_layer( layer_name ):
     layers = QgsMapLayerRegistry.instance().mapLayers()
-    l = False
+    l = None
     for name, layer in layers.iteritems():
         if layer_name == layer.name(): # re.match(layer_name, layer.name()):
             l = layer
     return l
-
 
 def wp_eq(wp1, wp2):
     return (wp1.latitude == wp2.latitude and wp1.longitude == wp2.longitude)
@@ -121,7 +118,6 @@ def canonicalise_name( name ):
     if classf:
         cname += ' '+ c
     cname += ' ' + rest
-    #print wp_type, classf, cname
     return [ wp_type, classf, cname ]
 
 def add_wp_layer( layer_name, model, gpx_points, defaults):
@@ -182,7 +178,63 @@ def add_wp_layer( layer_name, model, gpx_points, defaults):
     vl.updateExtents()
     QgsMapLayerRegistry.instance().addMapLayer(vl)
 
-def export_gpx_files( layer_name, rw_id ):
+def create_transform_to_WGS84( layer ):
+    crsDst = QgsCoordinateReferenceSystem(4326)
+    crsSrc = layer.crs()
+    return QgsCoordinateTransform(crsSrc, crsDst)
+
+
+
+def export_track_gpx_files( export_dir, layer_name ):
+
+    #this stuff should be in a configuration file
+
+    gpx_out = gpxpy.gpx.GPX()
+
+    # set up CRS transform
+
+    layer = find_layer(layer_name)
+    if layer is None:
+        print "Could not find layer '" + layer_name + "'"
+        return False
+    tr = create_transform_to_WGS84( layer )
+
+    # iterate over features in layer
+
+    for feature in layer.getFeatures():
+        geom = feature.geometry()
+        geom.convertToMultiType()
+        geom.transform(tr)
+        segments = geom.asMultiPolyline()
+
+        name = feature['part_of']
+        if feature['name'] != '' :
+            name = feature['name']
+        desc = ''
+        if 'description' in feature:
+            desc = feature['description']
+        # create gpx waypoint
+
+        # Create track in our GPX:
+        gpx_track = gpxpy.gpx.GPXTrack( name=name, description= desc )
+        gpx_out.tracks.append(gpx_track)
+
+        # iterate over the segments
+
+        for segment in segments:
+            gpx_segment = gpxpy.gpx.GPXTrackSegment()
+            gpx_track.segments.append(gpx_segment)
+            for point in segment:
+                gpx_segment.points.append(gpxpy.gpx.GPXTrackPoint(latitude=point.y(), longitude=point.x()))
+
+    ensure_dir( export_dir )
+
+    with open( export_dir + '/' + layer_name + '.gpx', 'w') as gpx_file:
+        gpx_file.write( gpx_out.to_xml())
+
+
+
+def export_wp_gpx_files( export_dir, layer_name, rw_id ):
 
     #this stuff should be in a configuration file
 
@@ -206,48 +258,57 @@ def export_gpx_files( layer_name, rw_id ):
         'files': False
     }
     weeds_default = 'Pin, Blue'
-    print type(weeds)
     test = 1
     markers = {  # by type
         'weed': weeds,
         'nb': nestbox,
         'sign': 'Pin, Green',
-        'track': 'Flag, Red',
-        'files': False
+        'track': ['Flag, Red', 'track_wp']
     }
 
     # build a list of file from the config above
 
     files = []
-    gpx_out = {}
+    gpx_out = gpx_rw = None
+
+    if rw_id == 'both' :
+        gpx_out = {}
+        gpx_rw = {}
+    elif  rw_id == 'yes':
+        gpx_rw = {}
+    else :
+        gpx_out = {}
 
     for k, v in markers.iteritems():
         if type(v) is dict  and v['files']:
             for  kk, vv in v.iteritems():
                 if kk != 'files' and kk != 'default' :
                     files.append(kk)
-        elif k != 'files' :
-            files.append( k )
-
-    #print files
+        elif type(v) is list :
+            files.append(v[1])
+        else:
+            files.append(k)
 
     for f in files:
-        gpx_out[f] = gpxpy.gpx.GPX()
+        if gpx_out is not None:
+            gpx_out[f] = gpxpy.gpx.GPX()
+        if gpx_rw is not None:
+            gpx_rw[f] = gpxpy.gpx.GPX()
 
     # set up CRS transform
 
     layer = find_layer(layer_name)
-    crsDst = QgsCoordinateReferenceSystem(4326)
-    crsSrc = layer.crs()
-    tr = QgsCoordinateTransform(crsSrc, crsDst)
-
+    if layer is None:
+        print "Could not find layer '" + layer_name + "'"
+        return False
+    tr = create_transform_to_WGS84( layer )
 
     # iterate over features in layer
 
     for feature in layer.getFeatures():
-        point = feature.geometry()
-        point.transform(tr)
-        point = point.asPoint()
+        geom = feature.geometry()
+        geom.transform(tr)
+        point = geom.asPoint()
 
         ftype = feature['type']
         if ftype not in markers:
@@ -266,32 +327,52 @@ def export_gpx_files( layer_name, rw_id ):
                 continue
             if ind_files: # true if we want individual files
                 ftype = c
-        #print feature['type'], ftype, m
+        elif type(m) is list: # filename given
+            m = m[0]          # marker
+            ftype = m[1]      # filename
+
         if ftype not in gpx_out:
             continue
 
         name = feature['name']
-        if rw_id and feature['rw_id'] !='' :
-            name = feature['rw_id']
+#        if rw_id and feature['rw_id'] !='' :
+#            name = feature['rw_id']
         cmt = ''
         if feature['description']:
             cmt = feature['description']
+
         # create gpx waypoint
 
-        wp = gpxpy.gpx.GPXWaypoint(latitude=point.y(), longitude=point.x(),
+        if gpx_out is not None:
+            wp = gpxpy.gpx.GPXWaypoint(latitude=point.y(), longitude=point.x(),
                                    name=name, comment=cmt, symbol=m)
-        #print name
-        gpx_out[ftype].waypoints.append( wp )
-        gpx_out[ftype].to_xml()
+            gpx_out[ftype].waypoints.append( wp )
+            gpx_out[ftype].to_xml()
 
-    export_dir = 'current/gpx_export'
-    ensure_dir( export_dir )
+        if gpx_rw is not None:
+            if feature['rw_id'] != NULL:
+                name = feature['rw_id']
+
+            wp = gpxpy.gpx.GPXWaypoint(latitude=point.y(), longitude=point.x(),
+                                   name=name, comment=cmt, symbol=m)
+            gpx_rw[ftype].waypoints.append( wp )
+            gpx_rw[ftype].to_xml()
+
+    # lastly wrirte out the files
+
+    if gpx_out is not None:
+        ensure_dir( export_dir )
+
+    if gpx_rw is not None:
+        ensure_dir( export_dir + '-rwid' )
 
     for file in files:
-        #print file
-        #print gpx_out[file].waypoints
-        with open( export_dir + '/' + file + '.gpx', 'w') as gpx_file:
-            gpx_file.write( gpx_out[file].to_xml())
+        if gpx_out  is not None:
+            with open( export_dir + '/' + file + '.gpx', 'w') as gpx_file:
+                gpx_file.write( gpx_out[file].to_xml())
+        if gpx_rw  is not None:
+            with open( export_dir + '-rwid/' + file + '.gpx', 'w') as gpx_file:
+                gpx_file.write( gpx_rw[file].to_xml())
 
 
 def find_gps_devices( gps_mount, device_list ):
@@ -348,7 +429,10 @@ def import_gpx_files( new_dir, gps_mount, upload ):
 
     if upload:
         ensure_dir(new_dir)
-        os.remove('./current')
+        try:
+            os.remove('./current')
+        except:
+            pass
         os.symlink(new_dir, './current')
         ensure_dir(new_files)
         for f in os.listdir("latest"):
@@ -373,11 +457,13 @@ def import_gpx_files( new_dir, gps_mount, upload ):
             # for each gpx file on the device  copy new or changed files to :new_files
             #   all have already been copied to
 #            os.system( 'pwd' )
-            p = re.compile(r'(Track|Wayp).+\.gpx$')
+#            print device, gps_dir
+#            p = re.compile(r'\.gpx$')
             for f in os.listdir(gps_dir + '/GPX'):
-                if p.match(f):
+                if re.search(r'\.gpx$', f):
                     fp = gps_dir + '/GPX/' + f
                     ff = device + '-' + f
+#                    print fp, ff
                     if ff not in archive or (archive[ff]['digest'].digest() != md5_file(fp).digest() ) :
                         sysx(['cp', '-p', fp, new_dir + '/' + ff])  # Copy it to new archive
                         os.symlink(  '../' + ff, new_files + '/' + ff )
@@ -392,7 +478,7 @@ def import_gpx_files( new_dir, gps_mount, upload ):
 
     for f in os.listdir(new_files):
 
-        if re.search(r'Waypoints.+\.gpx$', f):
+        if re.search(r'\.gpx$', f):
             original = False
             if f in archive:  # existing file -- read it so we can figure out what changed
                 original = {}
@@ -413,9 +499,6 @@ def import_gpx_files( new_dir, gps_mount, upload ):
                     continue
 
                 for wp in gpx.waypoints:
-                    # if wp.extensions:
-                    # print 'ext:', wp.extensions #['wptx1:WaypointExtension']
-                    # wp.cmt = wp.extensions['Samples']
                     if original:
                         if wp.name not in original:
                             new.waypoints.append(wp)
