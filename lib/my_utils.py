@@ -13,6 +13,7 @@ import re
 import os, errno
 import os.path
 import subprocess
+import math
 
 def find_layer( layer_name ):
     layers = QgsMapLayerRegistry.instance().mapLayers()
@@ -22,8 +23,22 @@ def find_layer( layer_name ):
             l = layer
     return l
 
-def wp_eq(wp1, wp2):
-    return (wp1.latitude == wp2.latitude and wp1.longitude == wp2.longitude)
+def wp_diff(wp1, wp2, tr = None, debug = None):
+    if tr:
+        geom = wp1
+        geom.transform(tr)
+        p = geom.asPoint()
+        long = p.x()
+        lat = p.y()
+    else:
+        long = wp1.longitude
+        lat = wp1.latitude
+    diff1 = lat - wp2.latitude
+    diff2 = long - wp2.longitude
+    if debug:
+        print lat, wp2.latitude, long, wp2.longitude, math.sqrt(diff1**2 + diff2**2 )
+    return  math.sqrt(diff1**2 + diff2**2 )
+
 
 wp_type_d = {
     'R': 'rt',
@@ -289,6 +304,8 @@ def export_wp_gpx_files( export_dir, layer_name, rw_id ):
         else:
             files.append(k)
 
+    files.append('all')
+
     for f in files:
         if gpx_out is not None:
             gpx_out[f] = gpxpy.gpx.GPX()
@@ -328,8 +345,9 @@ def export_wp_gpx_files( export_dir, layer_name, rw_id ):
             if ind_files: # true if we want individual files
                 ftype = c
         elif type(m) is list: # filename given
-            m = m[0]          # marker
             ftype = m[1]      # filename
+            m = m[0]          # marker
+
 
         if ftype not in gpx_out:
             continue
@@ -347,7 +365,8 @@ def export_wp_gpx_files( export_dir, layer_name, rw_id ):
             wp = gpxpy.gpx.GPXWaypoint(latitude=point.y(), longitude=point.x(),
                                    name=name, comment=cmt, symbol=m)
             gpx_out[ftype].waypoints.append( wp )
-            gpx_out[ftype].to_xml()
+            gpx_out['all'].waypoints.append( wp )
+            # gpx_out[ftype].to_xml()
 
         if gpx_rw is not None:
             if feature['rw_id'] != NULL:
@@ -356,7 +375,7 @@ def export_wp_gpx_files( export_dir, layer_name, rw_id ):
             wp = gpxpy.gpx.GPXWaypoint(latitude=point.y(), longitude=point.x(),
                                    name=name, comment=cmt, symbol=m)
             gpx_rw[ftype].waypoints.append( wp )
-            gpx_rw[ftype].to_xml()
+            gpx_rw['all'].waypoints.append( wp )
 
     # lastly wrirte out the files
 
@@ -473,39 +492,51 @@ def import_gpx_files( new_dir, gps_mount, upload ):
     # and a copy of all new/chagned files in :new_files
     # instantiate gpx object to hold new and changed objects
 
+    wp_master = find_layer( 'wp_master' )
+    tr = create_transform_to_WGS84(wp_master)
+
     changed = gpxpy.gpx.GPX()
     new = gpxpy.gpx.GPX()
 
     for f in os.listdir(new_files):
 
-        if re.search(r'\.gpx$', f):
+        if re.search(r'\.gpx$', f) and not re.match(r'(changed|new)', f):
             original = False
-            if f in archive:  # existing file -- read it so we can figure out what changed
-                original = {}
-                with open('latest/' + f, 'r') as gpx_file:
-                    try:
-                        gpx = gpxpy.parse(gpx_file)
-                    except:
-                        print "error parsing latest/" + f
-                        continue
-
-                    for wp in gpx.waypoints:
-                        original[wp.name] = wp
+#            if f in archive:  # existing file -- read it so we can figure out what changed
+#                original = {}
+#                with open('latest/' + f, 'r') as gpx_file:
+#                    try:
+#                        gpx = gpxpy.parse(gpx_file)
+#                    except:
+#                        print "error parsing latest/" + f
+#                        continue
+#
+#                    for wp in gpx.waypoints:
+#                        original[wp.name] = wp
+#            if f in archive:
+#                next
+            print f
             with open(new_files + '/' + f, 'r')  as gpx_file:
                 try:
                     gpx = gpxpy.parse(gpx_file)
-                except:
+                except Exception as e:
                     print "error parsing " + new_files+ '/' + f
+                    print e
                     continue
-
+                first = True
                 for wp in gpx.waypoints:
-                    if original:
-                        if wp.name not in original:
-                            new.waypoints.append(wp)
-                        elif not wp_eq(original[wp.name], wp):
-                            changed.waypoints.append(wp)
-                    else:
+                    existing = wp_master.getFeatures(QgsFeatureRequest().setFilterExpression(u'"name" = \''+wp.name+"'"))
+                    try: feature = existing.next()
+                    except:
                         new.waypoints.append(wp)
+                        continue
+                    # have a existing waypoint with that name
+                    diff = wp_diff( feature.geometry(), wp, tr, re.match(r'BT CH', wp.name )) # check if geometry matches
+                    if wp.name == 'B H WV03':
+                        print diff
+                    if diff > 0.00001:  # check if geometry matches
+                        print 'updated', wp.name, diff
+                        changed.waypoints.append(wp)
 
     if new.waypoints:
         with open(new_files +'/new.gpx', 'w') as output:
