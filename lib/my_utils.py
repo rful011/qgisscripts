@@ -14,6 +14,7 @@ import os, errno
 import os.path
 import subprocess
 import math
+import glob
 
 def find_layer( layer_name ):
     layers = QgsMapLayerRegistry.instance().mapLayers()
@@ -111,6 +112,9 @@ def canonicalise_name( name ):
             rest = m.group(2)
         else:
             wp_type = 'M'  # misc
+            i = 0
+            if re.match(r'\d+$', name) :
+                classf = 'tunnel'
     else:
         while i < len(name) and name[i] == ' ': # find the second non blank char
             i += 1
@@ -229,7 +233,7 @@ def export_track_gpx_files( export_dir, layer_name ):
         if 'description' in feature:
             desc = feature['description']
         # create gpx waypoint
-
+        type = 2
         # Create track in our GPX:
         gpx_track = gpxpy.gpx.GPXTrack( name=name, description= desc )
         gpx_out.tracks.append(gpx_track)
@@ -254,22 +258,22 @@ def export_wp_gpx_files( export_dir, layer_name, rw_id ):
     #this stuff should be in a configuration file
 
     nestbox = {
-        'hihi': 'Navaid, Black',
-        'saddleback': 'Navaid, Orange',
-        'kakariki': 'Circle, Red',
-        'rifleman': 'Circle, Green',
-        'default': 'Navaid, blue',
+        'hihi': ['Navaid, Black', '26'],
+        'saddleback': ['Navaid, Orange', '27'],
+        'kakariki': ['Circle, Red', '28'],
+        'rifleman': ['Circle, Green', '29'],
+        'default': ['Navaid, blue', '72'],
         'files': True   # separate files please!
     }
     nestbox_default = 'Navaid, White',
 
 
     weeds = {
-        'mp': 'Block, Blue',
-        'sp': 'Flag, Blue',
-        'mm': 'Diamond, Blue',
-        'pw': 'Square, Blue',
-        'default': 'Navaid, Blue',
+        'mp': ['Block, Blue', '0'],
+        'sp': ['Flag, Blue', '0'],
+        'mm': ['Diamond, Blue', '0'],
+        'pw': ['Square, Blue', '0'],
+        'default': ['Navaid, Blue', '0'],
         'files': False
     }
     weeds_default = 'Pin, Blue'
@@ -363,7 +367,7 @@ def export_wp_gpx_files( export_dir, layer_name, rw_id ):
 
         if gpx_out is not None:
             wp = gpxpy.gpx.GPXWaypoint(latitude=point.y(), longitude=point.x(),
-                                   name=name, comment=cmt, symbol=m)
+                                   name=name, comment=cmt, symbol=m[0], type=m[1])
             gpx_out[ftype].waypoints.append( wp )
             gpx_out['all'].waypoints.append( wp )
             # gpx_out[ftype].to_xml()
@@ -373,7 +377,7 @@ def export_wp_gpx_files( export_dir, layer_name, rw_id ):
                 name = feature['rw_id']
 
             wp = gpxpy.gpx.GPXWaypoint(latitude=point.y(), longitude=point.x(),
-                                   name=name, comment=cmt, symbol=m)
+                                   name=name, comment=cmt, symbol=m[0], type=m[1])
             gpx_rw[ftype].waypoints.append( wp )
             gpx_rw['all'].waypoints.append( wp )
 
@@ -393,35 +397,51 @@ def export_wp_gpx_files( export_dir, layer_name, rw_id ):
             with open( export_dir + '-rwid/' + file + '.gpx', 'w') as gpx_file:
                 gpx_file.write( gpx_rw[file].to_xml())
 
+#def download_gpx_files( export_dir, devices):
 
-def find_gps_devices( gps_mount, device_list ):
 
+
+def get_device_config( device_list ):
+
+    devices = {}
+    d = ''
+    del_keys = []
     if os.path.exists(device_list):
         with open(device_list) as json_data:
             d = json.load(json_data)
             devices = d['devices']
 
-    device_dirs = {}
+    count =  0
+    for dev, conf in devices.iteritems():
+        #print 'device', dev
+        if conf['type'] != 'directory':
+            for item, val in d[conf['type']].iteritems():
+                #print item, val
+                conf[item] = val
 
-    for vol in os.listdir(gps_mount):
-        if not re.match('GARMIN', vol):
+        if 'top_dir' not in conf:
             continue
-        device = ''
-        # get the device ID form the device file
-        id = ''
-        garmin_dir = '/Volumes/' + vol + '/Garmin/'
+        found = False
+        for dir in glob.glob(conf['top_dir']):
+            id = ''
+            with open(dir + '/Garmin/GarminDevice.xml', 'r') as f:
+                for l in f:
+                    m = re.search('<Id>(\d+)<\/Id>', l)
+                    if m:
+                        id = m.group(1)
+                        if id == conf['id']:
+                            conf['gpx_dir'] = dir+ '/' + conf['gpx_dir']
+                            found = True
+                            count += 1
+        if not found:
+            print "Can not find device " + id + " in devices file"
+            del_keys.append(dev)
 
-        with open(garmin_dir + '/GarminDevice.xml', 'r') as f:
-            for l in f:
-                m = re.search('<Id>(\d+)<\/Id>', l)
-                if m:
-                    id = m.group(1)
-                if id in devices:
-                    device_dirs[devices[id]] = garmin_dir
-                else:
-                    print "Can not find device " + id + " in devices file"
-                    os.exit
-    return device_dirs
+    if count == 0:
+        print "No imput devices found"
+    for key in del_keys:
+        del devices[key]
+    return devices
 
 def md5_file( name ):
     md5 = hashlib.md5()
@@ -435,12 +455,10 @@ def md5_file( name ):
     file.close()
     return md5
 
-def import_gpx_files( new_dir, gps_mount, upload ):
+def import_gpx_files( new_dir, devices, upload ):
 
     new_files = './current/new_files'
     # keep_data_for = ' 6 months'
-    devices = {}
-
 
     archive = {}
 
@@ -471,16 +489,26 @@ def import_gpx_files( new_dir, gps_mount, upload ):
             if not 'digest' in archive[f]:
                 archive[f]['digest'] = md5_file(latest)
 
-        for device, gps_dir in find_gps_devices(gps_mount, 'devices.json' ).iteritems():
+#        for device, gps_dir in get_device_config(gps_mount, 'devices.json' ).iteritems():
+        for device, conf in devices.iteritems():
 
             # for each gpx file on the device  copy new or changed files to :new_files
             #   all have already been copied to
 #            os.system( 'pwd' )
 #            print device, gps_dir
 #            p = re.compile(r'\.gpx$')
-            for f in os.listdir(gps_dir + '/GPX'):
+
+            dev_type = conf['type']
+
+            gps_dir = ''
+            if 'gpx_dir' in conf:
+                gpx_dir = conf['gpx_dir']
+            else:
+                continue  # not an input device
+            print "loading"
+            for f in os.listdir( gpx_dir ):
                 if re.search(r'\.gpx$', f):
-                    fp = gps_dir + '/GPX/' + f
+                    fp = gpx_dir + '/' + f
                     ff = device + '-' + f
 #                    print fp, ff
                     if ff not in archive or (archive[ff]['digest'].digest() != md5_file(fp).digest() ) :
@@ -532,8 +560,6 @@ def import_gpx_files( new_dir, gps_mount, upload ):
                         continue
                     # have a existing waypoint with that name
                     diff = wp_diff( feature.geometry(), wp, tr, re.match(r'BT CH', wp.name )) # check if geometry matches
-                    if wp.name == 'B H WV03':
-                        print diff
                     if diff > 0.00001:  # check if geometry matches
                         print 'updated', wp.name, diff
                         changed.waypoints.append(wp)

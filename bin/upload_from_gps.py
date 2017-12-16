@@ -6,7 +6,7 @@ from os.path import expanduser
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'lib'))
 
 
-from my_utils import  import_gpx_files, add_wp_layer, find_layer
+from my_utils import  import_gpx_files, add_wp_layer, find_layer, get_device_config
 
 def run_script(iface, **myargs): # repository, new_dir, mount, upload ):
 
@@ -19,7 +19,6 @@ def run_script(iface, **myargs): # repository, new_dir, mount, upload ):
 
     repository = expanduser('~') + "/GPS-Data"
     new_dir = date # current date
-    mount = '/Volumes'
     upload = False
     layer = 'wp_master'
 
@@ -43,9 +42,10 @@ def run_script(iface, **myargs): # repository, new_dir, mount, upload ):
         return
 
     os.chdir(repository)
+    devices = get_device_config('devices.json')
     master = find_layer( layer )
 
-    results = import_gpx_files( new_dir, mount, upload )
+    results = import_gpx_files( new_dir, devices, upload )
     # print results
 
     defaults = {

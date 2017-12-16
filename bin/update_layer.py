@@ -22,17 +22,14 @@ from my_utils import find_layer
 # from osgeo import ogr
 # from osgeo import gdal
 
-
-
 def run_script(iface, m_l='wp-master', u_l='changed, waypoints', matchon = 'name'):
 
     if matchon == '':
         matchon = 'name'
     if m_l == '':
-        m_l = 'wp_master-all'
+        m_l = 'wp_master'
     if u_l == '':
         u_l = 'changed'
-
 
     print 'master = ', m_l, 'update = ', u_l
     master = find_layer(m_l)
@@ -47,13 +44,10 @@ def run_script(iface, m_l='wp-master', u_l='changed, waypoints', matchon = 'name
         print "no layer "  + "'" + u_l + "'"
         return
 
-
-
     update_features = {}  # indexed by feature attribute name
     for f in update.getFeatures():
-#        print f
+        print f.attribute(matchon)
         update_features[f.attribute(matchon)] = f
-
 
     editing = False
     print [field.name() for field in master.pendingFields() ]

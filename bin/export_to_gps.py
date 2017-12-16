@@ -17,18 +17,20 @@
 """
 
 from time import localtime, strftime
-import sys, os, re
+import sys, os, re, glob
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'lib'))
 
 from os.path import expanduser
-from my_utils import export_wp_gpx_files, export_track_gpx_files
+from my_utils import export_wp_gpx_files, export_track_gpx_files, get_device_config, sysx
 
 def run_script(iface, **myargs): # layer, repository, finalise  ):
+
 
     wp_layer = 'wp_master'
     repository = expanduser('~') +"/GPS-Data"
     finalise = False
     track_layer = 'Tracks'
+    mount = '/Volumes'
     export_dir = './current/gps-export'
     just_finalise = False
     rw_id = ''  # use full name as default
@@ -60,7 +62,9 @@ def run_script(iface, **myargs): # layer, repository, finalise  ):
     if exit_now:
         return
 
+
     os.chdir(repository)
+    devices = get_device_config( 'devices.json' )
 
     if not just_finalise:
         if wp_layer != '':
@@ -71,3 +75,20 @@ def run_script(iface, **myargs): # layer, repository, finalise  ):
     if finalise :  # change the symlinks ready for next update with latest pointing to most recent dir
         os.remove('latest')
         os.rename('current', 'latest')
+        # copy the files to the devices
+
+    os.chdir(export_dir)
+    print os.getcwd()
+    for device, conf in devices.iteritems():
+        if 'export' not in conf:
+            continue
+
+        copy = 'cp ' + ' '.join(conf['export']) + ' ' + conf['gpx_dir']
+        print ' '.join(conf['export'])
+        fglob = []
+        for file in conf['export']:
+            fglob += glob.glob(file)
+        print fglob
+
+        sysx([ 'cp'] + fglob + [conf['gpx_dir']])
+
