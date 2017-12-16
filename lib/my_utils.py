@@ -501,7 +501,7 @@ def import_gpx_files( new_dir, devices, upload ):
             dev_type = conf['type']
 
             gps_dir = ''
-            if 'gpx_dir' in conf:
+            if 'import' in conf:
                 gpx_dir = conf['gpx_dir']
             else:
                 continue  # not an input device
