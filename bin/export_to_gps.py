@@ -10,7 +10,7 @@
     repository = expanduser('~') +"/GPS-Data"
     finalise = False
     track_layer = 'Tracks'
-    export_dir = './current/gpx'
+    export_dir = './current/gpx-export'
     just_finalise = False
     rw_id = ('', yes, both)  # use full name as default
 
@@ -31,7 +31,7 @@ def run_script(iface, **myargs): # layer, repository, finalise  ):
     finalise = False
     track_layer = 'Tracks'
     mount = '/Volumes'
-    export_dir = './current/gps-export'
+    export_dir = './current/gpx-export'
     just_finalise = False
     rw_id = ''  # use full name as default
     exit_now = False
@@ -72,23 +72,24 @@ def run_script(iface, **myargs): # layer, repository, finalise  ):
         if track_layer != '':
             export_track_gpx_files( export_dir, track_layer )
 
-    if finalise :  # change the symlinks ready for next update with latest pointing to most recent dir
+    save_dir = os.getcwd()
+    if finalise :  # update the export stuff
+        os.chdir(export_dir)
+        for device, conf in devices.iteritems():
+            if 'export' not in conf:
+                continue
+
+            print ' '.join(conf['export'])
+            fglob = []
+            for file in conf['export']:
+                fglob += glob.glob(file)
+            print fglob
+
+            sysx(['cp'] + fglob + [conf['gpx_dir']])
+## and change the symlinks ready for next update with latest pointing to most recent dir
+        os.chdir(save_dir)
         os.remove('latest')
         os.rename('current', 'latest')
         # copy the files to the devices
 
-    os.chdir(export_dir)
-    print os.getcwd()
-    for device, conf in devices.iteritems():
-        if 'export' not in conf:
-            continue
-
-        copy = 'cp ' + ' '.join(conf['export']) + ' ' + conf['gpx_dir']
-        print ' '.join(conf['export'])
-        fglob = []
-        for file in conf['export']:
-            fglob += glob.glob(file)
-        print fglob
-
-        sysx([ 'cp'] + fglob + [conf['gpx_dir']])
 

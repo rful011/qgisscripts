@@ -10,7 +10,7 @@ from qgis.utils import iface
 import time
 import re
 import string
-import sys, os
+import sys, os, re
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'lib'))
 
@@ -22,37 +22,51 @@ from my_utils import find_layer
 # from osgeo import ogr
 # from osgeo import gdal
 
-def run_script(iface, m_l='wp-master', u_l='changed, waypoints', matchon = 'name'):
+def run_script(iface, **myargs): # repository, new_dir, mount, upload ):
 
-    if matchon == '':
-        matchon = 'name'
-    if m_l == '':
-        m_l = 'wp_master'
-    if u_l == '':
-        u_l = 'changed'
+    master_n = 'wp_master'
+    match_on = 'name'
+    update_n = 'changed'
 
-    print 'master = ', m_l, 'update = ', u_l
-    master = find_layer(m_l)
-    if not master :
-        print "Cannot find layer " + "'" + m_l + "'"
+    exit_now = False
+    for k, v in myargs.iteritems():
+        if re.match( k, 'master' ) :
+            master_n = v
+        elif re.match(k, 'update'):
+            update_n = v
+        elif re.match(k, 'match'):
+            match_on = v
+        elif re.match(k, 'help'):
+            print "repository = ~/GPS-Data, newdir= <currentdate>, upload = False, layer = wp_master"
+            exit_now = True
+        else:
+            print "I don't recognise option '" + k + "'"
+            exit_now = True
+    if exit_now:
         return
 
-    update = find_layer(u_l)
+    print 'master = ', master_n, 'update = ', update_n
+    master = find_layer(master_n)
+    if not master :
+        print "Cannot find layer '%s'", master_n
+        return
+
+    update = find_layer(update_n)
     if update:
         print "update:", update.name()
     else:
-        print "no layer "  + "'" + u_l + "'"
+        print "no layer '%s'", update_n
         return
 
     update_features = {}  # indexed by feature attribute name
     for f in update.getFeatures():
-        print f.attribute(matchon)
-        update_features[f.attribute(matchon)] = f
+        print f.attribute(match_on)
+        update_features[f.attribute(match_on)] = f
 
     editing = False
     print [field.name() for field in master.pendingFields() ]
     for m in master.getFeatures():
-        n = m.attribute(matchon)
+        n = m.attribute(match_on)
         if update_features.get(n, 'none') != 'none' :
             u = update_features[n]
             print n, m.geometry(), u.geometry()
