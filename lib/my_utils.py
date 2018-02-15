@@ -204,7 +204,7 @@ def create_transform_to_WGS84( layer ):
 
 
 
-def export_track_gpx_files( export_dir, layer_name ):
+def export_track_gpx_files( export_dir, layer_name, name_by ):
 
     #this stuff should be in a configuration file
 
@@ -221,18 +221,21 @@ def export_track_gpx_files( export_dir, layer_name ):
     # iterate over features in layer
 
     for feature in layer.getFeatures():
+        # make sure there is one item of geometry
         geom = feature.geometry()
         geom.convertToMultiType()
         geom.transform(tr)
         segments = geom.asMultiPolyline()
 
-        name = feature['part_of']
-        if feature['name'] != '' :
+        name = ''
+        if name_by != 'none':  # then use the group by default
+            name = feature[name_by]
+        if name == '' and feature['name'] != '' :
             name = feature['name']
         desc = ''
         if 'description' in feature:
             desc = feature['description']
-        # create gpx waypoint
+        # create gpx item
         type = 2
         # Create track in our GPX:
         gpx_track = gpxpy.gpx.GPXTrack( name=name, description= desc )
@@ -443,12 +446,13 @@ def get_device_config( device_list ):
                             conf['gpx_dir'] = dir+ '/' + conf['gpx_dir']
                             found = True
                             count += 1
-        if not found:
-            print "Can not find device " + id + " in devices file"
-            del_keys.append(dev)
+                            if not found:
+                                print "Can not find device " + id + " in devices file"
+                                del_keys.append(dev)
 
     if count == 0:
         print "No imput devices found"
+        return {}
     for key in del_keys:
         del devices[key]
     return devices

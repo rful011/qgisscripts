@@ -17,7 +17,7 @@ def run_script(iface, **myargs): # repository, new_dir, mount, upload ):
     now = strftime("%Y-%m-%d %H:%M:%S", localtime())
 
 
-    repository = expanduser('~') + "/GPS-Data"
+    repository = expanduser('~') + "/Google Drive/Tiri/GPX repository/"
     new_dir = date # current date
     upload = False
     layer = 'wp_master'
