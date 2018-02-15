@@ -70,7 +70,8 @@ def run_script(iface, **myargs): # layer, repository, finalise  ):
         if wp_layer != '':
             export_wp_gpx_files( export_dir, wp_layer, rw_id )
         if track_layer != '':
-            export_track_gpx_files( export_dir, track_layer )
+            export_track_gpx_files( export_dir, 'Tracks', 'part_of' )
+            export_track_gpx_files( export_dir, 'Streams' )
 
     save_dir = os.getcwd()
     if finalise :  # update the export stuff
