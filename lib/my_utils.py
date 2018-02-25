@@ -16,6 +16,17 @@ import subprocess
 import math
 import glob
 
+# set parameter defaults
+
+
+def set_def(item, conf, key, hc_def=None):
+    if item:
+        return item
+    if key in conf:
+        return conf[key]
+    return hc_def
+
+
 def find_layer( layer_name ):
     layers = QgsMapLayerRegistry.instance().mapLayers()
     l = None
@@ -23,6 +34,7 @@ def find_layer( layer_name ):
         if layer_name == layer.name(): # re.match(layer_name, layer.name()):
             l = layer
     return l
+
 
 def wp_diff(wp1, wp2, tr = None, debug = None):
     if tr:
@@ -203,7 +215,6 @@ def create_transform_to_WGS84( layer ):
     return QgsCoordinateTransform(crsSrc, crsDst)
 
 
-
 def export_track_gpx_files( export_dir, layer_name, name_by ):
 
     #this stuff should be in a configuration file
@@ -376,7 +387,7 @@ def export_wp_gpx_files( export_dir, layer_name, rw_id ):
             # gpx_out[ftype].to_xml()
 
         if gpx_rw is not None:
-            if feature['rw_id'] != NULL:
+            if feature['rw_id'] != None:
                 name = feature['rw_id']
 
             wp = gpxpy.gpx.GPXWaypoint(latitude=point.y(), longitude=point.x(),
@@ -416,13 +427,15 @@ def export_wp_gpx_files( export_dir, layer_name, rw_id ):
 
 def get_device_config( device_list ):
 
-    devices = {}
+    devices =  {}
+    default = {}
     d = ''
     del_keys = []
     if os.path.exists(device_list):
         with open(device_list) as json_data:
             d = json.load(json_data)
             devices = d['devices']
+            default = d["defaults"]
 
     count =  0
     for dev, conf in devices.iteritems():
@@ -437,7 +450,9 @@ def get_device_config( device_list ):
         found = False
         for dir in glob.glob(conf['top_dir']):
             id = ''
+            print dir + '/Garmin/GarminDevice.xml'
             with open(dir + '/Garmin/GarminDevice.xml', 'r') as f:
+                print f
                 for l in f:
                     m = re.search('<Id>(\d+)<\/Id>', l)
                     if m:
@@ -455,7 +470,7 @@ def get_device_config( device_list ):
         return {}
     for key in del_keys:
         del devices[key]
-    return devices
+    return [devices, default ]
 
 def md5_file( name ):
     md5 = hashlib.md5()
@@ -485,43 +500,28 @@ def import_gpx_files( new_dir, devices, upload ):
         except:
             pass
         os.symlink(new_dir, './current')
-        ensure_dir(new_files)
-        for f in os.listdir("latest"):
-            if os.path.isdir("latest/" + f):
-                continue
-            digest = None
-
-            #  next unless f.match(/-(Track|Wayp).+\.gpx$/)
-            nf = new_dir + '/' + f  # new file name
-            if os.path.exists(nf):   # already there?
-                digest = md5_file('latest/' + f)
-                if digest == hashlib.md5(nf):  # they are the same
-                    continue
-            latest = 'latest/' + f
-            sysx(['cp', '-p', latest, nf ])
-            archive[f] = {'mtime': os.path.getmtime(latest)}
-            if not 'digest' in archive[f]:
-                archive[f]['digest'] = md5_file(latest)
 
         for device, conf in devices.iteritems():  # iterate over devices in conf file
-
             dev_type = conf['type']
-
             gps_dir = ''
             if 'import' in conf:   # do we want to import from this device?
                 gpx_dir = conf['gpx_dir']
             else:
                 continue  # not an input device
             print "loading from ", gpx_dir
-            for f in os.listdir( gpx_dir ):
-                if re.search(r'\.gpx$', f):
+            for f in os.listdir( gpx_dir ):  # iterate over the gpx files in gpx dir
+                if re.search(r'\.gpx$', f):  # A GPX file
                     fp = gpx_dir + '/' + f
                     ff = device + '-' + f  # add dev prefix
+                    if not re.search(r'-(Track | Wayp). +\.gpx$', f ):  # not created by GPS -- GARMIN specific
 #                    print fp, ff
-                    # if not in archive dict or if digest is different...
-                    if ff not in archive or (archive[ff]['digest'].digest() != md5_file(fp).digest() ) :
+                        original = './latest/gpx-export/'+f
+                        print original
+                        if os.path.exists(original):  # it one of ours
+                            print md5_file(fp).digest(), md5_file(original).digest()
+                            if md5_file(fp).digest() == md5_file(original).digest():  # The same ?
+                                continue  # dont copy it
                         sysx(['cp', '-p', fp, new_dir + '/' + ff])  # Copy it to new archive
-                        os.symlink(  '../' + ff, new_files + '/' + ff )
 
     # At this point we should have an archive copy of the GPX directory in new_dir
     # and a copy of all new/chagned files in :new_files
@@ -533,25 +533,12 @@ def import_gpx_files( new_dir, devices, upload ):
     changed = gpxpy.gpx.GPX()
     new = gpxpy.gpx.GPX()
 
-    for f in os.listdir(new_files):
+    for f in os.listdir(new_dir):
 
         if re.search(r'\.gpx$', f) and not re.match(r'(changed|new)', f):
             original = False
-#            if f in archive:  # existing file -- read it so we can figure out what changed
-#                original = {}
-#                with open('latest/' + f, 'r') as gpx_file:
-#                    try:
-#                        gpx = gpxpy.parse(gpx_file)
-#                    except:
-#                        print "error parsing latest/" + f
-#                        continue
-#
-#                    for wp in gpx.waypoints:
-#                        original[wp.name] = wp
-#            if f in archive:
-#                next
             print f
-            with open(new_files + '/' + f, 'r')  as gpx_file:
+            with open(new_dir + '/' + f, 'r')  as gpx_file:
                 try:
                     gpx = gpxpy.parse(gpx_file)
                 except Exception as e:

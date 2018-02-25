@@ -21,28 +21,25 @@ import sys, os, re, glob
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'lib'))
 
 from os.path import expanduser
-from my_utils import export_wp_gpx_files, export_track_gpx_files, get_device_config, sysx
+from my_utils import export_wp_gpx_files, export_track_gpx_files, get_device_config, sysx, set_def
 
 def run_script(iface, **myargs): # layer, repository, finalise  ):
 
+    repository = expanduser('~') + "/Google Drive/Tiri/GPX repository"
 
-    wp_layer = 'wp_master'
-    repository = expanduser('~') +"/GPS-Data"
-    finalise = False
-    track_layer = 'Tracks'
-    mount = '/Volumes'
-    export_dir = './current/gpx-export'
-    just_finalise = False
-    rw_id = ''  # use full name as default
+    mount = changed = new = export_dir = archive = wp_layer = line_layers = None
+    just_finalise = finalise = False
+    rw_id = None  # use full name as default
     exit_now = False
     for k, v in myargs.iteritems():
+        print k, v
         if re.match(k, 'wp'):
             wp_layer = v
         elif re.match( k, 'track' ) :
             track_layer = v
             tracks = True
         elif re.match( k, 'repository' ):
-            repository = v
+            repository = expanduser('~') + v
         elif re.match( k, 'just_finalise'):
             just_finalise = v
             finalise = True
@@ -52,6 +49,7 @@ def run_script(iface, **myargs): # layer, repository, finalise  ):
             rw_id = v
         elif re.match(k, 'export'):
             export_dir = v
+            print k, v, export_dir
         elif re.match(k, 'help'):
             print "repository = ~/GPS-Data, layer = wp_master, finialise = False, rw_id = False, just_finailise = False"
             exit_now = True
@@ -64,18 +62,29 @@ def run_script(iface, **myargs): # layer, repository, finalise  ):
 
 
     os.chdir(repository)
-    devices = get_device_config( 'devices.json' )
+    config = get_device_config( 'devices.json' )
+    defaults = config[1]
+    devices = config[0]
+
+    wp_layer = set_def( wp_layer, defaults, 'master', "wp_master")
+    archive = set_def( archive, defaults, 'archive', "~/GPS-Data")
+    new = set_def( new, defaults, 'new', 'new')
+    changed = set_def(changed,  defaults, 'changed', "changed")
+    mount = set_def( mount, defaults, 'mount', "/Volumes" )
+    export_dir = set_def( export_dir, defaults, 'export_dir', 'gpx-export')
+    line_layers = set_def(line_layers, defaults, 'line_layers', ['Tracks', 'Streams'])
 
     if not just_finalise:
         if wp_layer != '':
-            export_wp_gpx_files( export_dir, wp_layer, rw_id )
-        if track_layer != '':
-            export_track_gpx_files( export_dir, 'Tracks', 'part_of' )
-            export_track_gpx_files( export_dir, 'Streams' )
+            export_wp_gpx_files( './current/' + export_dir, wp_layer, rw_id )
+        for l in line_layers:
+            m = re.search( r'(\w+)/(\w+)', l )
+            print l, m.group(1), m.group(2)
+            export_track_gpx_files( './current/' + export_dir, m.group(1), m.group(2) )
 
     save_dir = os.getcwd()
     if finalise :  # update the export stuff
-        os.chdir(export_dir)
+        os.chdir('./current/'+ export_dir)
         for device, conf in devices.iteritems():
             if 'export' not in conf:
                 continue
@@ -86,6 +95,11 @@ def run_script(iface, **myargs): # layer, repository, finalise  ):
                 fglob += glob.glob(file)
             print fglob
 
+            if 'clean' in conf:  # remove existing files from export dir
+                remove = glob.glob(conf['gpx_dir']+'/*.gpx')
+                if len(remove) > 0:
+                    sysx( ['rm'] +  glob.glob(conf['gpx_dir']+'/*.gpx') )
+            # and copy in the new ones
             sysx(['cp'] + fglob + [conf['gpx_dir']])
 ## and change the symlinks ready for next update with latest pointing to most recent dir
         os.chdir(save_dir)

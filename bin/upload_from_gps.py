@@ -42,7 +42,10 @@ def run_script(iface, **myargs): # repository, new_dir, mount, upload ):
         return
 
     os.chdir(repository)
-    devices = get_device_config('devices.json')
+    config = get_device_config('devices.json')
+    defaults = config[1]
+    devices = config[0]
+
     master = find_layer( layer )
 
     results = import_gpx_files( new_dir, devices, upload )

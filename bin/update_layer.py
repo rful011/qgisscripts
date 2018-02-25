@@ -69,7 +69,10 @@ def run_script(iface, **myargs): # repository, new_dir, mount, upload ):
         n = m.attribute(match_on)
         if update_features.get(n, 'none') != 'none' :
             u = update_features[n]
-            print n, m.geometry(), u.geometry()
+            old = m.geometry().asPoint()
+            new = u.geometry().asPoint()
+            print n, old.x(), old.y()
+            print n, new.x(), new.y()
             #if not m.geometry().equals( u.geometry()) :
             if not editing :
                 editing = True
@@ -77,8 +80,10 @@ def run_script(iface, **myargs): # repository, new_dir, mount, upload ):
             print 'updating', n
             print 'time', time.strftime("%Y-%m-%d %H:%M:%S")
             m['updated'] = time.strftime("%Y-%m-%d %H:%M:%S")
-            master.dataProvider().changeGeometryValues({ m.id() : u.geometry() })
+            print master.dataProvider().changeGeometryValues({ m.id() : u.geometry() })
             master.updateFeature(m)
+            master.commitChanges()
+            new = m.geometry().asPoint()
+            print new.x(), new.y()
     #Call commit to save the changes
-    if editing :
-        master.commitChanges()
+
