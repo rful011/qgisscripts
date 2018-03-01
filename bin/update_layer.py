@@ -63,7 +63,8 @@ def run_script(iface, **myargs): # repository, new_dir, mount, upload ):
     for f in update.getFeatures():
         print f.attribute(match_on)
         update_features[f.attribute(match_on)] = f
-#        print master.getFeatures( QgsFeatureRequest().setFilterExpression ( u'"{0}" = {1}'.format(match_on, f.attribute(match_on) )))
+#        print master.getFeatures( QgsFeatureRequest().setFilterExpression (
+    # u'"{0}" = {1}'.format(match_on, f.attribute(match_on) )))
 
     print [field.name() for field in master.pendingFields() ]
     for m in master.getFeatures():
