@@ -20,8 +20,9 @@ from time import localtime, strftime
 import sys, os, re, glob
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'lib'))
 
-from os.path import expanduser
+from os.path import expanduser, isfile
 from my_utils import export_wp_gpx_files, export_track_gpx_files, get_device_config, sysx, set_def
+
 
 def run_script(iface, **myargs): # layer, repository, finalise  ):
 

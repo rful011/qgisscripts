@@ -2,7 +2,7 @@
 
 from time import localtime, strftime
 import sys, os, re
-from os.path import expanduser
+from os.path import expanduser, exists
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'lib'))
 
 
@@ -16,9 +16,8 @@ def run_script(iface, **myargs): # repository, new_dir, mount, upload ):
     date = strftime("%Y-%m-%d", localtime())
     now = strftime("%Y-%m-%d %H:%M:%S", localtime())
 
-
     repository = expanduser('~') + "/Google Drive/Tiri/GPX repository/"
-    new_dir = date # current date
+    new_dir = date
     upload = False
     layer = 'wp_master'
 
@@ -45,6 +44,12 @@ def run_script(iface, **myargs): # repository, new_dir, mount, upload ):
     config = get_device_config('devices.json')
     defaults = config[1]
     devices = config[0]
+
+    if os.path.exists('current'):
+        if upload:
+            os.remove('current')
+        else:
+            new_dir = 'current'
 
     master = find_layer( layer )
 

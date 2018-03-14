@@ -528,13 +528,31 @@ def import_gpx_files( new_dir, devices, upload ):
     # instantiate gpx object to hold new and changed objects
 
     wp_master = find_layer( 'wp_master' )
+    wp_features = {}
     tr = create_transform_to_WGS84(wp_master)
 
     changed = gpxpy.gpx.GPX()
     new = gpxpy.gpx.GPX()
 
-    for f in os.listdir(new_dir):
+    crsSrc = QgsCoordinateReferenceSystem(4326)
+    crsDest = wp_master.crs()
+    tr = QgsCoordinateTransform(crsSrc, crsDest)
 
+
+    distance = QgsDistanceArea()  # instantiate distance object
+    #distance.setEllipsoidalMode(True)
+    #distance.setEllipsoid('WGS84')
+
+    if new.waypoints:
+        with open(new_files +'/new.gpx', 'w') as output:
+            output.write(new.to_xml()) # extra_attributes = garmin_attribs))
+
+    for f in wp_master.getFeatures():   # cache all featutes
+        # print f.attribute('name')
+        wp_features[f.attribute('name')] = f
+
+
+    for f in os.listdir(new_dir):
         if re.search(r'\.gpx$', f) and not re.match(r'(changed|new)', f):
             original = False
             print f
@@ -547,22 +565,17 @@ def import_gpx_files( new_dir, devices, upload ):
                     continue
                 first = True
                 for wp in gpx.waypoints:
-                    existing = wp_master.getFeatures(QgsFeatureRequest().setFilterExpression(u'"name" = \''+wp.name+"'"))
-                    try: feature = existing.next()
-                    except:
+                    if wp.name in wp_features: # have a existing waypoint with that name
+                        feature = wp_features[wp.name]
+                        diff =  distance.measureLine( feature.geometry().asPoint(), tr.transform( QgsPoint( wp.longitude, wp.latitude) ))
+                        print wp.name, diff
+                        if diff >= 0.1:  # check if geometry matches
+                            print 'updated', wp.name, diff
+                            changed.waypoints.append(wp)
+                    else:
                         new.waypoints.append(wp)
-                        continue
-                    # have a existing waypoint with that name
-                    diff = wp_diff( feature.geometry(), wp, tr, re.match(r'BT CH', wp.name )) # check if geometry matches
-                    if diff > 0.00001:  # check if geometry matches
-                        print 'updated', wp.name, diff
-                        changed.waypoints.append(wp)
 
- #   if new.waypoints:
- #       with open(new_files +'/new.gpx', 'w') as output:
- #           output.write(new.to_xml()) # extra_attributes = garmin_attribs))
-
- #   if changed.waypoints:
-#      with open(new_files + '/changed.gpx', 'w') as output:
+#    if changed.waypoints:
+#        with open(new_files + '/changed.gpx', 'w') as output:
 #            output.write(changed.to_xml()) # extra_attributes = garmin_attribs))
     return [new.waypoints, changed.waypoints]
