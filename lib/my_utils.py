@@ -1,8 +1,8 @@
 
 # Import the PyQt and the QGIS libraries
 # Import the PyQt and the QGIS libraries
-from PyQt4.QtCore import *
-from PyQt4.QtGui import *
+from PyQt5.QtCore import *
+from PyQt5.QtGui import *
 from qgis.core import *
 
 import hashlib
@@ -16,6 +16,11 @@ import subprocess
 import math
 import glob
 
+from datetime import timezone
+
+def utc_to_local(utc_dt):
+    return utc_dt.replace(tzinfo=timezone.utc).astimezone(tz=None)
+
 # set parameter defaults
 
 
@@ -28,13 +33,12 @@ def set_def(item, conf, key, hc_def=None):
 
 
 def find_layer( layer_name ):
-    layers = QgsMapLayerRegistry.instance().mapLayers()
-    l = None
-    for name, layer in layers.iteritems():
-        if layer_name == layer.name(): # re.match(layer_name, layer.name()):
-            l = layer
-    return l
-
+    prog = QgsProject.instance()
+    layer = prog.mapLayersByName( layer_name )
+    print( layer_name, layer )
+    if len(layer) == 0 :
+        return None
+    return layer[0]
 
 def wp_diff(wp1, wp2, tr = None, debug = None):
     if tr:
@@ -49,7 +53,7 @@ def wp_diff(wp1, wp2, tr = None, debug = None):
     diff1 = lat - wp2.latitude
     diff2 = long - wp2.longitude
     if debug:
-        print lat, wp2.latitude, long, wp2.longitude, math.sqrt(diff1**2 + diff2**2 )
+        print ( lat, wp2.latitude, long, wp2.longitude, math.sqrt(diff1**2 + diff2**2 ) )
     return  math.sqrt(diff1**2 + diff2**2 )
 
 
@@ -153,16 +157,16 @@ def canonicalise_name( name ):
 
 def add_wp_layer( layer_name, model, gpx_points, defaults):
     # create layer
-
+    tr = create_transform('to', model )
     # source crs
     crsSrc = QgsCoordinateReferenceSystem(4326)
     crsDest = model.crs()
-    tr = QgsCoordinateTransform(crsSrc, crsDest)
+    # tr = QgsCoordinateTransform(crsSrc, crsDest, QgsProject.instance() )
 
     vl = QgsVectorLayer("Point?crs="+crsDest.authid(), layer_name, "memory")
     pr = vl.dataProvider()  # need to create data provider
 
-    fields = model.pendingFields()
+    fields = model.fields()
 
     if fields[0].name() == 'gid':
         fields.remove(0)  # let postgis set the gid
@@ -170,7 +174,7 @@ def add_wp_layer( layer_name, model, gpx_points, defaults):
     vl.updateFields()  # tell the vector layer to fetch changes from the provider
 
     vl.updateFields()  # tell the vector layer to fetch changes from the provider
-    fields = vl.pendingFields()
+    fields = vl.fields()
 
     # build a hash if the filed names with default values if given
     template = {}
@@ -187,14 +191,14 @@ def add_wp_layer( layer_name, model, gpx_points, defaults):
         [wp_t, cl, cn] = canonicalise_name(wp.name)
 
         time = wp.time
-        if wp.time:
-            time =  wp.time.strftime("%Y-%m-%d %T")
-
+        if wp.time:   # gpxpy returns times in UTC
+            time =  utc_to_local(wp.time).strftime("%Y-%m-%d %T")
         fet = QgsFeature()
         fet.setFields(fields, True)
 
-        point = tr.transform( QgsPoint( wp.longitude, wp.latitude) )
-        fet.setGeometry(QgsGeometry(QgsPointV2(QgsWKBTypes.PointZ, point.x(), point.y(), 0.0)))
+        point = QgsPoint( wp.longitude, wp.latitude)
+        point.transform(tr)
+        fet.setGeometry(QgsGeometry(QgsPoint( point.x(), point.y(), 0.0)))
 
         set_attrb(fet, 'name', cn, template )
         set_attrb(fet, 'rw_id', wp.comment, template, n)
@@ -207,12 +211,20 @@ def add_wp_layer( layer_name, model, gpx_points, defaults):
 
     pr.addFeatures(features)
     vl.updateExtents()
-    QgsMapLayerRegistry.instance().addMapLayer(vl)
+    print ( layer_name, QgsProject.instance().addMapLayer(vl) )
+#    print ( layer_name, QgsProject.layerStore(QgsProject.instance()).addMapLayer(vl) )
 
-def create_transform_to_WGS84( layer ):
-    crsDst = QgsCoordinateReferenceSystem(4326)
-    crsSrc = layer.crs()
-    return QgsCoordinateTransform(crsSrc, crsDst)
+def create_transform( dir, layer, epsg = '4326' ):
+    if dir == 'from':
+        crsDst = QgsCoordinateReferenceSystem('EPSG:' + epsg)
+        crsSrc = layer.crs()
+    elif dir == 'to':
+        crsSrc = QgsCoordinateReferenceSystem('EPSG:' + epsg )
+        crsDst = layer.crs()
+    else:
+        return None
+#    print(crsSrc, crsDst)
+    return QgsCoordinateTransform( crsSrc, crsDst, QgsProject.instance() )
 
 
 def export_track_gpx_files( export_dir, layer_name, name_by ):
@@ -225,9 +237,9 @@ def export_track_gpx_files( export_dir, layer_name, name_by ):
 
     layer = find_layer(layer_name)
     if layer is None:
-        print "Could not find layer '" + layer_name + "'"
+        print ( "Could not find layer '" + layer_name + "'" )
         return False
-    tr = create_transform_to_WGS84( layer )
+    tr = create_transform( 'from', layer )
 
     # iterate over features in layer
 
@@ -312,9 +324,9 @@ def export_wp_gpx_files( export_dir, layer_name, rw_id ):
     else :
         gpx_out = {}
 
-    for k, v in markers.iteritems():
+    for k, v in markers.items():
         if type(v) is dict  and v['files']:
-            for  kk, vv in v.iteritems():
+            for  kk, vv in v.items():
                 if kk != 'files' and kk != 'default' :
                     files.append(kk)
         elif type(v) is list :
@@ -334,9 +346,9 @@ def export_wp_gpx_files( export_dir, layer_name, rw_id ):
 
     layer = find_layer(layer_name)
     if layer is None:
-        print "Could not find layer '" + layer_name + "'"
+        print ( "Could not find layer '" + layer_name + "'" )
         return False
-    tr = create_transform_to_WGS84( layer )
+    tr = create_transform( 'from',  layer )
 
     # iterate over features in layer
 
@@ -415,10 +427,11 @@ def export_wp_gpx_files( export_dir, layer_name, rw_id ):
 
     for file in files:
         if gpx_out  is not None:
-            with open( export_dir + '/' + file + '.gpx', 'w') as gpx_file:
-                gpx_file.write( gpx_out[file].to_xml(extra_attributes = garmin_attribs))
+            with open( export_dir + '/' + file + '.gpx', 'w', encoding='utf8') as gpx_file:
+                print( file )
+                gpx_file.write( gpx_out[file].to_xml( extra_attributes = garmin_attribs))
         if gpx_rw  is not None:
-            with open( export_dir + '-rwid/' + file + '.gpx', 'w') as gpx_file:
+            with open( export_dir + '-rwid/' + file + '.gpx', 'w', encoding='utf8') as gpx_file:
                 gpx_file.write( gpx_rw[file].to_xml(extra_attributes = garmin_attribs))
 
 #def download_gpx_files( export_dir, devices):
@@ -438,11 +451,11 @@ def get_device_config( device_list ):
             default = d["defaults"]
 
     count =  0
-    for dev, conf in devices.iteritems():
-        #print 'device', dev
+    for dev, conf in devices.items():
+        #print ( 'device', dev )
         if conf['type'] != 'directory':
-            for item, val in d[conf['type']].iteritems():
-                #print item, val
+            for item, val in d[conf['type']].items():
+                #print ( item, val )
                 conf[item] = val
 
         if 'top_dir' not in conf:
@@ -450,9 +463,7 @@ def get_device_config( device_list ):
         found = False
         for dir in glob.glob(conf['top_dir']):
             id = ''
-            print dir + '/Garmin/GarminDevice.xml'
             with open(dir + '/Garmin/GarminDevice.xml', 'r') as f:
-                print f
                 for l in f:
                     m = re.search('<Id>(\d+)<\/Id>', l)
                     if m:
@@ -462,11 +473,15 @@ def get_device_config( device_list ):
                             found = True
                             count += 1
                             if not found:
-                                print "Can not find device " + id + " in devices file"
+                                print ( "Can not find device " + id + " in devices file" )
                                 del_keys.append(dev)
+                                continue
+        if not found:
+            print( "Can not find device " + dev )
+            del_keys.append(dev)
 
     if count == 0:
-        print "No imput devices found"
+        print ( "No imput devices found" )
         return {}
     for key in del_keys:
         del devices[key]
@@ -484,7 +499,7 @@ def md5_file( name ):
     file.close()
     return md5
 
-def import_gpx_files( new_dir, devices, upload ):
+def import_gpx_files( new_dir, devices, upload, from_time ):
 
     new_files = './current/new_files'
     # keep_data_for = ' 6 months'
@@ -501,24 +516,24 @@ def import_gpx_files( new_dir, devices, upload ):
             pass
         os.symlink(new_dir, './current')
 
-        for device, conf in devices.iteritems():  # iterate over devices in conf file
+        for device, conf in devices.items():  # iterate over devices in conf file
             dev_type = conf['type']
             gps_dir = ''
             if 'import' in conf:   # do we want to import from this device?
                 gpx_dir = conf['gpx_dir']
             else:
                 continue  # not an input device
-            print "loading from ", gpx_dir
+            print ( "loading from ", gpx_dir )
             for f in os.listdir( gpx_dir ):  # iterate over the gpx files in gpx dir
                 if re.search(r'\.gpx$', f):  # A GPX file
                     fp = gpx_dir + '/' + f
                     ff = device + '-' + f  # add dev prefix
                     if not re.search(r'-(Track | Wayp). +\.gpx$', f ):  # not created by GPS -- GARMIN specific
-#                    print fp, ff
+#                    print ( fp, ff )
                         original = './latest/gpx-export/'+f
-                        print original
+                        print ( original )
                         if os.path.exists(original):  # it one of ours
-                            print md5_file(fp).digest(), md5_file(original).digest()
+                            print ( md5_file(fp).digest(), md5_file(original).digest() )
                             if md5_file(fp).digest() == md5_file(original).digest():  # The same ?
                                 continue  # dont copy it
                         sysx(['cp', '-p', fp, new_dir + '/' + ff])  # Copy it to new archive
@@ -529,48 +544,49 @@ def import_gpx_files( new_dir, devices, upload ):
 
     wp_master = find_layer( 'wp_master' )
     wp_features = {}
-    tr = create_transform_to_WGS84(wp_master)
+    tr = create_transform( 'to', wp_master)
 
     changed = gpxpy.gpx.GPX()
     new = gpxpy.gpx.GPX()
 
-    crsSrc = QgsCoordinateReferenceSystem(4326)
-    crsDest = wp_master.crs()
-    tr = QgsCoordinateTransform(crsSrc, crsDest)
-
+#    crsSrc = QgsCoordinateReferenceSystem(4326)
+#    crsDest = wp_master.crs()
+#    tr = QgsCoordinateTransform(crsSrc, crsDest)
 
     distance = QgsDistanceArea()  # instantiate distance object
     #distance.setEllipsoidalMode(True)
     #distance.setEllipsoid('WGS84')
 
     if new.waypoints:
-        with open(new_files +'/new.gpx', 'w') as output:
+        with open(new_files +'/new.gpx', 'w', encoding='utf8') as output:
             output.write(new.to_xml()) # extra_attributes = garmin_attribs))
 
     for f in wp_master.getFeatures():   # cache all featutes
-        # print f.attribute('name')
+        # print ( f.attribute('name') )
         wp_features[f.attribute('name')] = f
-
 
     for f in os.listdir(new_dir):
         if re.search(r'\.gpx$', f) and not re.match(r'(changed|new)', f):
             original = False
-            print f
-            with open(new_dir + '/' + f, 'r')  as gpx_file:
+            print ( 'new_dir:', f )
+            with open(new_dir + '/' + f, 'r', encoding='utf8')  as gpx_file:
                 try:
                     gpx = gpxpy.parse(gpx_file)
                 except Exception as e:
-                    print "error parsing " + new_files+ '/' + f
-                    print e
+                    print ( "error parsing " + new_files+ '/' + f )
+                    print ( e )
                     continue
                 first = True
                 for wp in gpx.waypoints:
+                    if from_time and wp.time > from_time:
+                        continue
                     if wp.name in wp_features: # have a existing waypoint with that name
                         feature = wp_features[wp.name]
-                        diff =  distance.measureLine( feature.geometry().asPoint(), tr.transform( QgsPoint( wp.longitude, wp.latitude) ))
-                        print wp.name, diff
+                        new_point = QgsPoint( wp.longitude, wp.latitude)
+                        new_point.transform(tr)
+                        diff =  distance.measureLine( feature.geometry().asPoint(), QgsPointXY(new_point) )
                         if diff >= 0.1:  # check if geometry matches
-                            print 'updated', wp.name, diff
+                            print ( 'updated', wp.name, diff )
                             changed.waypoints.append(wp)
                     else:
                         new.waypoints.append(wp)

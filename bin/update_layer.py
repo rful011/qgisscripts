@@ -1,12 +1,6 @@
 
 """ update layers in place """
 
-# Import the PyQt and the QGIS libraries
-from PyQt4.QtCore import *
-from PyQt4.QtGui import *
-from qgis.core import *
-from qgis.utils import iface
-
 import time
 import re
 import string
@@ -29,7 +23,7 @@ def run_script(iface, **myargs): # repository, new_dir, mount, upload ):
     update_n = 'changed'
 
     exit_now = False
-    for k, v in myargs.iteritems():
+    for k, v in myargs.items():
         if re.match( k, 'master' ) :
             master_n = v
         elif re.match(k, 'update'):
@@ -37,55 +31,56 @@ def run_script(iface, **myargs): # repository, new_dir, mount, upload ):
         elif re.match(k, 'match'):
             match_on = v
         elif re.match(k, 'help'):
-            print "repository = ~/GPS-Data, newdir= <currentdate>, upload = False, layer = wp_master"
+            print( "repository = ~/GPS-Data, newdir= <currentdate>, upload = False, layer = wp_master" )
             exit_now = True
         else:
-            print "I don't recognise option '" + k + "'"
+            print( "I don't recognise option '" + k + "'" )
             exit_now = True
     if exit_now:
         return
 
-    print 'master = ', master_n, 'update = ', update_n
+    editing = False
+    update_features = {}
+    master_features = {}
+
+    print( 'master = ', master_n, 'update = ', update_n )
     master = find_layer(master_n)
     if not master :
-        print "Cannot find layer '%s'", master_n
+        print( "Cannot find layer '%s'", master_n )
         return
 
     update = find_layer(update_n)
     if update:
-        print "update:", update.name()
+        print( "update:", update.name() )
     else:
-        print "no layer '%s'", update_n
+        print( "no layer '%s'", update_n )
         return
 
-    editing = False
-    update_features = {}  # indexed by feature attribute name
-    for f in update.getFeatures():
-        print f.attribute(match_on)
-        update_features[f.attribute(match_on)] = f
-#        print master.getFeatures( QgsFeatureRequest().setFilterExpression (
-    # u'"{0}" = {1}'.format(match_on, f.attribute(match_on) )))
+    for f in master.getFeatures():  # cache all featutes
+        master_features[f.attribute(match_on)] = f
 
-    print [field.name() for field in master.pendingFields() ]
-    for m in master.getFeatures():
-        n = m.attribute(match_on)
-        if update_features.get(n, 'none') != 'none' :
+    for f in update.getFeatures():
+        update_features[f.attribute(match_on)] = f
+
+    geom_updates = {}
+    for u in update.getFeatures():
+        n = u.attribute(match_on)
+        if n in master_features:
+            m = master_features[n]
             u = update_features[n]
-            old = m.geometry().asPoint()
-            new = u.geometry().asPoint()
-            print n, old.x(), old.y()
-            print n, new.x(), new.y()
-            #if not m.geometry().equals( u.geometry()) :
             if not editing :
                 editing = True
                 master.startEditing()
-            print 'updating', n
-            print 'time', time.strftime("%Y-%m-%d %H:%M:%S")
-            m['updated'] = time.strftime("%Y-%m-%d %H:%M:%S")
-            print master.dataProvider().changeGeometryValues({ m.id() : u.geometry() })
+            geom_updates[id]= u.geometry()
             master.updateFeature(m)
-            master.commitChanges()
-            new = m.geometry().asPoint()
-            print new.x(), new.y()
-    #Call commit to save the changes
+        else:
+            print( "Warning: attribute", match_on, '(', n, ')',  'not found in layer', master_n )
+
+    # do gemetry changes if any
+    if len(geom_updates) > 0 :
+        master.dataProvider().changeGeometryValues(geom_updates)
+
+    # Call commit to save the changes
+    master.commitChanges()
+
 

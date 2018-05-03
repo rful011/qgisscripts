@@ -32,8 +32,8 @@ def run_script(iface, **myargs): # layer, repository, finalise  ):
     just_finalise = finalise = False
     rw_id = None  # use full name as default
     exit_now = False
-    for k, v in myargs.iteritems():
-        print k, v
+    for k, v in myargs.items():
+        print( k, v)
         if re.match(k, 'wp'):
             wp_layer = v
         elif re.match( k, 'track' ) :
@@ -50,12 +50,12 @@ def run_script(iface, **myargs): # layer, repository, finalise  ):
             rw_id = v
         elif re.match(k, 'export'):
             export_dir = v
-            print k, v, export_dir
+            print( k, v, export_dir )
         elif re.match(k, 'help'):
-            print "repository = ~/GPS-Data, layer = wp_master, finialise = False, rw_id = False, just_finailise = False"
+            print( "repository = ~/GPS-Data, layer = wp_master, finialise = False, rw_id = False, just_finailise = False" )
             exit_now = True
         else:
-            print "I don't recognise option '" + k + "'"
+            print( "I don't recognise option '" + k + "'" )
             exit_now = True
 
     if exit_now:
@@ -80,21 +80,21 @@ def run_script(iface, **myargs): # layer, repository, finalise  ):
             export_wp_gpx_files( './current/' + export_dir, wp_layer, rw_id )
         for l in line_layers:
             m = re.search( r'(\w+)/(\w+)', l )
-            print l, m.group(1), m.group(2)
+            print( l, m.group(1), m.group(2) )
             export_track_gpx_files( './current/' + export_dir, m.group(1), m.group(2) )
 
     save_dir = os.getcwd()
     if finalise :  # update the export stuff
         os.chdir('./current/'+ export_dir)
-        for device, conf in devices.iteritems():
+        for device, conf in devices.items():
             if 'export' not in conf:
                 continue
 
-            print ' '.join(conf['export'])
+            print( ' '.join(conf['export']) )
             fglob = []
             for file in conf['export']:
                 fglob += glob.glob(file)
-            print fglob
+            print( fglob )
 
             if 'clean' in conf:  # remove existing files from export dir
                 remove = glob.glob(conf['gpx_dir']+'/*.gpx')

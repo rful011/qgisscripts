@@ -2,6 +2,9 @@
 
 from time import localtime, strftime
 import sys, os, re
+from datetime import datetime
+from dateutil.parser import parse
+#import pandas as pd
 from os.path import expanduser, exists
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'lib'))
 
@@ -20,9 +23,11 @@ def run_script(iface, **myargs): # repository, new_dir, mount, upload ):
     new_dir = date
     upload = False
     layer = 'wp_master'
+    from_time = ft = None
+
 
     exit_now = False
-    for k, v in myargs.iteritems():
+    for k, v in myargs.items():
         if re.match( k, 'newdir' ) :
             new_dir = v
         elif re.match( k, 'repository' ):
@@ -31,11 +36,13 @@ def run_script(iface, **myargs): # repository, new_dir, mount, upload ):
             upload = v
         elif re.match(k, 'layer'):
             layer = v
+        elif re.match(k, 'from'):
+            ft = v
         elif re.match(k, 'help'):
-            print "repository = ~/GPS-Data, newdir= <currentdate>, upload = False, layer = wp_master"
+            print ( "repository = ~/GPS-Data, newdir= <currentdate>, upload = False, layer = wp_master" )
             exit_now = True
         else:
-            print "I don't recognise option '" + k + "'"
+            print ( "I don't recognise option '" + k + "'" )
             exit_now = True
     if exit_now:
         return
@@ -45,6 +52,9 @@ def run_script(iface, **myargs): # repository, new_dir, mount, upload ):
     defaults = config[1]
     devices = config[0]
 
+    if ft:
+        from_time= datetime.strptime(ft, '%Y-%m-%d')
+
     if os.path.exists('current'):
         if upload:
             os.remove('current')
@@ -53,14 +63,15 @@ def run_script(iface, **myargs): # repository, new_dir, mount, upload ):
 
     master = find_layer( layer )
 
-    results = import_gpx_files( new_dir, devices, upload )
-    # print results
+    results = import_gpx_files( new_dir, devices, upload, from_time )
 
     defaults = {
         'created': now,
         'source': 'RJF',
         'updated': now
     }
+
+    print( results )
 
     if results[0] : # new
         add_wp_layer('new', master, results[0], defaults )
