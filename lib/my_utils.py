@@ -546,20 +546,16 @@ def import_gpx_files( new_dir, devices, upload, from_time ):
     wp_features = {}
     tr = create_transform( 'to', wp_master)
 
+
     changed = gpxpy.gpx.GPX()
     new = gpxpy.gpx.GPX()
 
-#    crsSrc = QgsCoordinateReferenceSystem(4326)
-#    crsDest = wp_master.crs()
-#    tr = QgsCoordinateTransform(crsSrc, crsDest)
-
     distance = QgsDistanceArea()  # instantiate distance object
-    #distance.setEllipsoidalMode(True)
-    #distance.setEllipsoid('WGS84')
 
     if new.waypoints:
         with open(new_files +'/new.gpx', 'w', encoding='utf8') as output:
             output.write(new.to_xml()) # extra_attributes = garmin_attribs))
+
 
     for f in wp_master.getFeatures():   # cache all featutes
         # print ( f.attribute('name') )
@@ -581,8 +577,10 @@ def import_gpx_files( new_dir, devices, upload, from_time ):
                     if from_time and wp.time > from_time:
                         continue
                     if wp.name in wp_features: # have a existing waypoint with that name
+                        continue
                         feature = wp_features[wp.name]
                         new_point = QgsPoint( wp.longitude, wp.latitude)
+                        print( new_point, tr)
                         new_point.transform(tr)
                         diff =  distance.measureLine( feature.geometry().asPoint(), QgsPointXY(new_point) )
                         if diff >= 0.1:  # check if geometry matches
