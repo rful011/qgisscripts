@@ -71,7 +71,7 @@ def run_script(iface, **myargs): # repository, new_dir, mount, upload ):
             if not editing :
                 editing = True
                 master.startEditing()
-            geom_updates[id]= u.geometry()
+            geom_updates[m.id()]= u.geometry()
             master.updateFeature(m)
         else:
             print( "Warning: attribute", match_on, '(', n, ')',  'not found in layer', master_n )
