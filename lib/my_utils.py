@@ -40,22 +40,6 @@ def find_layer( layer_name ):
         return None
     return layer[0]
 
-def wp_diff(wp1, wp2, tr = None, debug = None):
-    if tr:
-        geom = wp1
-        geom.transform(tr)
-        p = geom.asPoint()
-        long = p.x()
-        lat = p.y()
-    else:
-        long = wp1.longitude
-        lat = wp1.latitude
-    diff1 = lat - wp2.latitude
-    diff2 = long - wp2.longitude
-    if debug:
-        print ( lat, wp2.latitude, long, wp2.longitude, math.sqrt(diff1**2 + diff2**2 ) )
-    return  math.sqrt(diff1**2 + diff2**2 )
-
 
 wp_type_d = {
     'R': 'rt',
@@ -65,7 +49,8 @@ wp_type_d = {
     'R': 'rt',
     'C': 'stream',
     'M': 'misc',
-    'W': 'weed'
+    'W': 'weed',
+    'P': 'poly'
 }
 
 def get_wp_type( name ):
@@ -155,7 +140,7 @@ def canonicalise_name( name ):
     cname += ' ' + rest
     return [ wp_type, classf, cname ]
 
-def add_wp_layer( layer_name, model, gpx_points, defaults):
+def add_wp_layer( layer_name, model, gpx_points, defaults, extra = None):
     # create layer
     tr = create_transform('to', model )
     # source crs
@@ -171,9 +156,10 @@ def add_wp_layer( layer_name, model, gpx_points, defaults):
     if fields[0].name() == 'gid':
         fields.remove(0)  # let postgis set the gid
     pr.addAttributes(fields)
+    if extra:
+        pr.addAttributes([QgsField("extra", QVariant.Float)])
     vl.updateFields()  # tell the vector layer to fetch changes from the provider
 
-    vl.updateFields()  # tell the vector layer to fetch changes from the provider
     fields = vl.fields()
 
     # build a hash if the filed names with default values if given
@@ -207,6 +193,9 @@ def add_wp_layer( layer_name, model, gpx_points, defaults):
         set_attrb(fet, 'classification', cl, template)
         set_attrb(fet, 'updated', time, template)
         set_attrb(fet, 'source', None, template )
+        if extra and cn in extra:
+            set_attrb(fet, 'extra', extra[cn], template)
+
         features.append(fet)
 
     pr.addFeatures(features)
@@ -253,7 +242,7 @@ def export_track_gpx_files( export_dir, layer_name, name_by ):
         name = ''
         if name_by != 'none':  # then use the group by default
             name = feature[name_by]
-        if name == '' and feature['name'] != '' :
+        if name == '' and 'name' in feature:   # ['name'] != '' :
             name = feature['name']
         desc = ''
         if 'description' in feature:
@@ -463,7 +452,7 @@ def get_device_config( device_list ):
         found = False
         for dir in glob.glob(conf['top_dir']):
             id = ''
-            with open(dir + '/Garmin/GarminDevice.xml', 'r') as f:
+            with open(dir + '/Garmin/GarminDevice.xml', 'r', encoding="utf-8") as f:
                 for l in f:
                     m = re.search('<Id>(\d+)<\/Id>', l)
                     if m:
@@ -549,6 +538,7 @@ def import_gpx_files( new_dir, devices, upload, from_time ):
 
     changed = gpxpy.gpx.GPX()
     new = gpxpy.gpx.GPX()
+    diffs = {}  # record the size of the difference for changed points
 
     distance = QgsDistanceArea()  # instantiate distance object
 
@@ -577,14 +567,16 @@ def import_gpx_files( new_dir, devices, upload, from_time ):
                     if from_time and wp.time > from_time:
                         continue
                     if wp.name in wp_features: # have a existing waypoint with that name
-                        continue
+                        if  wp.longitude == 0.0 or  wp.latitude == 0.0:
+                            print( "invalid coordinates for ", wp.name, 'in file ', f)
+                            continue
                         feature = wp_features[wp.name]
                         new_point = QgsPoint( wp.longitude, wp.latitude)
-                        print( new_point, tr)
                         new_point.transform(tr)
                         diff =  distance.measureLine( feature.geometry().asPoint(), QgsPointXY(new_point) )
                         if diff >= 0.1:  # check if geometry matches
                             print ( 'updated', wp.name, diff )
+                            diff[wp.name] = diff
                             changed.waypoints.append(wp)
                     else:
                         new.waypoints.append(wp)
@@ -592,4 +584,17 @@ def import_gpx_files( new_dir, devices, upload, from_time ):
 #    if changed.waypoints:
 #        with open(new_files + '/changed.gpx', 'w') as output:
 #            output.write(changed.to_xml()) # extra_attributes = garmin_attribs))
+    defaults = {
+        'created': now,
+        'source': 'RJF',
+        'updated': now
+    }
+
+
+    if new.waypoints : # new
+        add_wp_layer('new', master, new.waypoints, defaults )
+    del defaults['created'] # only new items have a 'created' set
+    if changed.waypoints :
+        add_wp_layer('changed', master,  changed.waypoints, defaults, diffs )
+
     return [new.waypoints, changed.waypoints]
