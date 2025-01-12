@@ -1,23 +1,34 @@
-""" upload and process gpx files from one or more Garmin GPSs """
+""" upload and process gpx files from one or more Garmin GPSs
+
+    :parameters:
+
+    wp_layer = 'wp_master'
+    repository = expanduser('~') + "/Google Drive/Tiri/GPX repository/"
+    upload = False
+    newdir = <current date>  only relevant if upload is true
+    layer = "wp_master"
+    from = <date>   ignore gpx files older that this
+"""
 
 from time import localtime, strftime
 import sys, os, re
 from datetime import datetime
 from dateutil.parser import parse
-#import pandas as pd
+
+date = datetime.now().strftime("%Y-%m-%d")
+
 from os.path import expanduser, exists
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'lib'))
+sys.path.append('/usr/local/lib/python3.7/site-packages')
 
 
-from my_utils import  import_gpx_files, add_wp_layer, find_layer, get_device_config
+from qgis_utils import  import_gpx_files, add_wp_layer, find_layer, get_device_config
 
 def run_script(iface, **myargs): # repository, new_dir, mount, upload ):
 
 
     master = None
 
-    date = strftime("%Y-%m-%d", localtime())
-    now = strftime("%Y-%m-%d %H:%M:%S", localtime())
 
     repository = expanduser('~') + "/Google Drive/Tiri/GPX repository/"
     new_dir = date
@@ -47,6 +58,8 @@ def run_script(iface, **myargs): # repository, new_dir, mount, upload ):
     if exit_now:
         return
 
+    print( 'upload ', upload, new_dir )
+
     os.chdir(repository)
     config = get_device_config('devices.json')
     defaults = config[1]
@@ -65,17 +78,3 @@ def run_script(iface, **myargs): # repository, new_dir, mount, upload ):
 
     results = import_gpx_files( new_dir, devices, upload, from_time )
 
-    defaults = {
-        'created': now,
-        'source': 'RJF',
-        'updated': now
-    }
-
-    print( results )
-
-    if results[0] : # new
-        add_wp_layer('new', master, results[0], defaults )
-    del defaults['created'] # only new items have a 'created' set
-    if results[1] :
-        add_wp_layer('changed', master,  results[1], defaults )
-        #add_wp_layer('changed', {  'name': QVariant.String, 'time': QVariant.String } , results[1]) # just name and updated geometry
