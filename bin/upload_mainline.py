@@ -12,9 +12,9 @@ parser.add_argument('-r', '--repository', help="base dir where the GPX files are
 parser.add_argument('-n', '--new_dir', help="dir where we put new/changed files", action="store" )
 args = parser.parse_args()
 
-print 'args ', args
+print( 'args ', args )
 
-print ">>>>>", sys.exit
+print(">>>>>", sys.exit )
 
 upload = not args.noupload
 if args.mount:
